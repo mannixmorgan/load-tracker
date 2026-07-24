@@ -97,7 +97,6 @@
             background: #ee5a52;
         }
 
-        /* Modal Styles */
         .modal {
             display: none;
             position: fixed;
@@ -206,7 +205,6 @@
             flex: 1;
         }
 
-        /* Loads List */
         .loads-container {
             display: flex;
             flex-direction: column;
@@ -595,17 +593,14 @@
         let loads = [];
         let editingLoadId = null;
 
-        // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             loadFromStorage();
             renderLoads();
         });
 
-        // Storage functions
         function loadFromStorage() {
             const stored = localStorage.getItem('loads');
             loads = stored ? JSON.parse(stored) : [];
-            // Remove loads older than 7 days
             const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
             loads = loads.filter(load => new Date(load.createdAt) > sevenDaysAgo);
             saveToStorage();
@@ -615,7 +610,6 @@
             localStorage.setItem('loads', JSON.stringify(loads));
         }
 
-        // Modal functions
         function openAddLoadModal() {
             document.getElementById('addLoadModal').classList.add('active');
         }
@@ -630,7 +624,6 @@
             }
         }
 
-        // Add load
         function addLoad(e) {
             e.preventDefault();
             
@@ -650,12 +643,9 @@
             saveToStorage();
             renderLoads();
             closeModal('addLoadModal');
-            
-            // Reset form
             e.target.reset();
         }
 
-        // Update load status
         function updateLoadStatus(loadId, newStatus) {
             const load = loads.find(l => l.id === loadId);
             if (load) {
@@ -666,7 +656,6 @@
             }
         }
 
-        // Move load forward
         function moveLoadForward(loadId) {
             const load = loads.find(l => l.id === loadId);
             if (load) {
@@ -677,7 +666,6 @@
             }
         }
 
-        // Move load backward
         function moveLoadBackward(loadId) {
             const load = loads.find(l => l.id === loadId);
             if (load) {
@@ -688,7 +676,6 @@
             }
         }
 
-        // Edit load
         function openEditModal(loadId) {
             const load = loads.find(l => l.id === loadId);
             if (load) {
@@ -720,7 +707,6 @@
             }
         }
 
-        // Delete load
         function deleteLoad(loadId) {
             if (confirm('Are you sure you want to delete this load?')) {
                 loads = loads.filter(l => l.id !== loadId);
@@ -730,7 +716,6 @@
             }
         }
 
-        // Clear old loads
         function clearOldLoads() {
             const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
             const countBefore = loads.length;
@@ -747,7 +732,6 @@
             }
         }
 
-        // Dropdown menu
         function toggleDropdown(loadId, e) {
             e.stopPropagation();
             const menu = document.querySelector(`[data-menu="${loadId}"]`);
@@ -769,7 +753,6 @@
             });
         });
 
-        // Render loads
         function renderLoads() {
             const container = document.getElementById('loadsContainer');
 

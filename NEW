@@ -1,0 +1,1368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Load Tracker</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a3a52 0%, #0f2438 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .password-screen {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .password-container {
+            background: white;
+            padding: 50px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+
+        .password-container h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .password-container p {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+
+        .password-input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+        .password-input:focus {
+            outline: none;
+            border-color: #1a3a52;
+            box-shadow: 0 0 0 3px rgba(26, 58, 82, 0.1);
+        }
+
+        .password-btn {
+            width: 100%;
+            padding: 15px;
+            background: #1a3a52;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .password-btn:hover {
+            background: #0f2438;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(26, 58, 82, 0.4);
+        }
+
+        .password-error {
+            color: #d32f2f;
+            margin-top: 15px;
+            font-weight: 600;
+            display: none;
+        }
+
+        .app-container {
+            display: none;
+        }
+
+        .app-container.active {
+            display: block;
+        }
+
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .header-subtitle {
+            color: #999;
+            margin-top: 2px;
+            font-size: 14px;
+            font-weight: 600;
+            width: 100%;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 700;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: #1a3a52;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0f2438;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(26, 58, 82, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .btn-small {
+            padding: 8px 14px;
+            font-size: 12px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.4);
+        }
+
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 35px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 450px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .modal-header h2 {
+            color: #333;
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 32px;
+            cursor: pointer;
+            color: #999;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .close-btn:hover {
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 700;
+            font-size: 15px;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        input[type="file"],
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 15px;
+            font-family: inherit;
+            font-weight: 600;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #1a3a52;
+            box-shadow: 0 0 0 3px rgba(26, 58, 82, 0.1);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 25px;
+        }
+
+        .form-actions button {
+            flex: 1;
+        }
+
+        .pdf-upload-section {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 2px dashed #ddd;
+            text-align: center;
+        }
+
+        .pdf-upload-section p {
+            color: #666;
+            font-weight: 600;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .extraction-status {
+            margin-top: 15px;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            display: none;
+        }
+
+        .extraction-status.success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            display: block;
+        }
+
+        .extraction-status.error {
+            background: #ffebee;
+            color: #c62828;
+            display: block;
+        }
+
+        .extraction-status.warning {
+            background: #fff3e0;
+            color: #e65100;
+            display: block;
+        }
+
+        .loads-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .load-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+            border-left: 3px solid #ccc;
+        }
+
+        .load-card:hover {
+            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .load-card.dispatched {
+            border-left-color: #FF8C00;
+        }
+
+        .load-card.in-transit {
+            border-left-color: #FFD700;
+        }
+
+        .load-card.delivered {
+            border-left-color: #2196f3;
+        }
+
+        .load-card.pod-received {
+            border-left-color: #4caf50;
+        }
+
+        .load-card-collapsed {
+            padding: 18px 22px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            cursor: pointer;
+            flex-wrap: wrap;
+        }
+
+        .load-card-collapsed:hover {
+            background: #f9f9f9;
+        }
+
+        .load-primary {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex: 1;
+            min-width: 260px;
+        }
+
+        .load-secondary {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+
+        .load-rate-con {
+            font-weight: 700;
+            color: #333;
+            font-size: 14px;
+            background: #f0f0f0;
+            padding: 6px 12px;
+            border-radius: 6px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .load-carrier {
+            font-weight: 600;
+            color: #666;
+            font-size: 14px;
+            line-height: 1.2;
+        }
+
+        .load-route {
+            font-weight: 800;
+            color: #1a1a1a;
+            font-size: 19px;
+            line-height: 1.25;
+        }
+
+        .status-badge-compact {
+            display: inline-block;
+            padding: 7px 14px;
+            border-radius: 16px;
+            font-size: 13px;
+            font-weight: 800;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .status-badge-compact.dispatched {
+            background: #FF8C00;
+            color: white;
+        }
+
+        .status-badge-compact.in-transit {
+            background: #FFD700;
+            color: #333;
+        }
+
+        .status-badge-compact.delivered {
+            background: #2196f3;
+            color: white;
+        }
+
+        .status-badge-compact.pod-received {
+            background: #4caf50;
+            color: white;
+        }
+
+        .load-card-menu {
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .menu-btn {
+            background: none;
+            border: none;
+            color: #999;
+            cursor: pointer;
+            font-size: 18px;
+            padding: 4px 8px;
+        }
+
+        .menu-btn:hover {
+            color: #333;
+        }
+
+        .dropdown-menu {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: 30px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 100;
+            min-width: 130px;
+        }
+
+        .dropdown-menu.active {
+            display: block;
+        }
+
+        .dropdown-menu button {
+            display: block;
+            width: 100%;
+            text-align: left;
+            padding: 12px 16px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            color: #333;
+            font-size: 13px;
+            border-radius: 0;
+            font-weight: 600;
+        }
+
+        .dropdown-menu button:first-child {
+            border-radius: 7px 7px 0 0;
+        }
+
+        .dropdown-menu button:last-child {
+            border-radius: 0 0 7px 7px;
+        }
+
+        .dropdown-menu button:hover {
+            background: #f5f5f5;
+        }
+
+        .dropdown-menu button.delete:hover {
+            background: #ffebee;
+            color: #d32f2f;
+        }
+
+        .load-card-expanded {
+            display: none;
+            padding: 16px;
+            border-top: 1px solid #f0f0f0;
+            background: #fafafa;
+        }
+
+        .load-card-expanded.active {
+            display: block;
+        }
+
+        .expanded-section {
+            margin-bottom: 16px;
+        }
+
+        .expanded-section-label {
+            font-weight: 700;
+            color: #666;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            letter-spacing: 0.5px;
+        }
+
+        .expanded-section-value {
+            color: #333;
+            font-size: 14px;
+            font-weight: 600;
+            word-break: break-word;
+            white-space: pre-wrap;
+        }
+
+        .stage-buttons {
+            display: flex;
+            gap: 6px;
+            margin: 12px 0;
+            flex-wrap: wrap;
+        }
+
+        .stage-btn {
+            padding: 7px 12px;
+            font-size: 12px;
+            border-radius: 6px;
+            border: 2px solid #ddd;
+            background: #f9f9f9;
+            color: #333;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-weight: 700;
+        }
+
+        .stage-btn:hover {
+            background: #f0f0f0;
+            border-color: #ccc;
+        }
+
+        .stage-btn.active {
+            background: #1a3a52;
+            color: white;
+            border-color: #1a3a52;
+        }
+
+        .load-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+
+        .empty-state-icon {
+            font-size: 56px;
+            margin-bottom: 16px;
+        }
+
+        .empty-state h2 {
+            color: #666;
+            margin-bottom: 8px;
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .empty-state p {
+            color: #999;
+            margin-bottom: 16px;
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .truck-icon {
+            width: 34px;
+            height: 20px;
+            vertical-align: -3px;
+            margin-right: 4px;
+        }
+
+        @media (max-width: 768px) {
+            header {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .header-actions {
+                justify-content: center;
+                width: 100%;
+            }
+
+            .load-secondary {
+                width: 100%;
+                justify-content: space-between;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Password Screen -->
+    <div class="password-screen" id="passwordScreen">
+        <div class="password-container">
+            <h1><svg class="truck-icon" viewBox="0 0 100 54" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <rect x="24" y="34" width="68" height="6" rx="1" fill="#1a3a52"/>
+                <rect x="20" y="36" width="6" height="4" fill="#333"/>
+                <rect x="2" y="20" width="8" height="14" rx="1" fill="#1a3a52"/>
+                <rect x="8" y="14" width="18" height="20" rx="2" fill="#1a3a52"/>
+                <rect x="12" y="17" width="8" height="8" rx="1" fill="#bcd4e6"/>
+                <g stroke="#5a6570" stroke-width="1.6">
+                    <circle cx="38" cy="26" r="8" fill="#c3cad1"/>
+                    <circle cx="38" cy="26" r="3.5" fill="#eef1f3"/>
+                    <circle cx="54" cy="26" r="8" fill="#c3cad1"/>
+                    <circle cx="54" cy="26" r="3.5" fill="#eef1f3"/>
+                    <circle cx="70" cy="26" r="8" fill="#c3cad1"/>
+                    <circle cx="70" cy="26" r="3.5" fill="#eef1f3"/>
+                    <circle cx="86" cy="26" r="8" fill="#c3cad1"/>
+                    <circle cx="86" cy="26" r="3.5" fill="#eef1f3"/>
+                </g>
+                <g fill="#333">
+                    <circle cx="16" cy="42" r="6"/>
+                    <circle cx="66" cy="42" r="6"/>
+                    <circle cx="84" cy="42" r="6"/>
+                </g>
+                <g fill="#888">
+                    <circle cx="16" cy="42" r="2"/>
+                    <circle cx="66" cy="42" r="2"/>
+                    <circle cx="84" cy="42" r="2"/>
+                </g>
+            </svg> Load Tracker</h1>
+            <p>Enter password to access</p>
+            <input type="password" id="passwordInput" class="password-input" placeholder="Enter password" autocomplete="off" onkeypress="if(event.key==='Enter') checkPassword()">
+            <button class="password-btn" onclick="checkPassword()">Access</button>
+            <div class="password-error" id="passwordError">Incorrect password. Try again.</div>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div class="app-container" id="appContainer">
+        <div class="container">
+            <header>
+                <div>
+                    <h1><svg class="truck-icon" viewBox="0 0 100 54" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <rect x="24" y="34" width="68" height="6" rx="1" fill="#1a3a52"/>
+                        <rect x="20" y="36" width="6" height="4" fill="#333"/>
+                        <rect x="2" y="20" width="8" height="14" rx="1" fill="#1a3a52"/>
+                        <rect x="8" y="14" width="18" height="20" rx="2" fill="#1a3a52"/>
+                        <rect x="12" y="17" width="8" height="8" rx="1" fill="#bcd4e6"/>
+                        <g stroke="#5a6570" stroke-width="1.6">
+                            <circle cx="38" cy="26" r="8" fill="#c3cad1"/>
+                            <circle cx="38" cy="26" r="3.5" fill="#eef1f3"/>
+                            <circle cx="54" cy="26" r="8" fill="#c3cad1"/>
+                            <circle cx="54" cy="26" r="3.5" fill="#eef1f3"/>
+                            <circle cx="70" cy="26" r="8" fill="#c3cad1"/>
+                            <circle cx="70" cy="26" r="3.5" fill="#eef1f3"/>
+                            <circle cx="86" cy="26" r="8" fill="#c3cad1"/>
+                            <circle cx="86" cy="26" r="3.5" fill="#eef1f3"/>
+                        </g>
+                        <g fill="#333">
+                            <circle cx="16" cy="42" r="6"/>
+                            <circle cx="66" cy="42" r="6"/>
+                            <circle cx="84" cy="42" r="6"/>
+                        </g>
+                        <g fill="#888">
+                            <circle cx="16" cy="42" r="2"/>
+                            <circle cx="66" cy="42" r="2"/>
+                            <circle cx="84" cy="42" r="2"/>
+                        </g>
+                    </svg> Load Tracker</h1>
+                    <p class="header-subtitle">Track active loads in real-time</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn-primary" onclick="openAddLoadModal()">+ Add Load</button>
+                    <button class="btn-secondary" onclick="openPdfModal()">📄 PDF</button>
+                    <button class="btn-secondary" onclick="clearOldLoads()">Clean</button>
+                </div>
+            </header>
+
+            <div class="loads-container" id="loadsContainer">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📭</div>
+                    <h2>No Active Loads</h2>
+                    <p>Add your first load to get started</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Load Modal -->
+    <div class="modal" id="addLoadModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add New Load</h2>
+                <button class="close-btn" onclick="closeModal('addLoadModal')">&times;</button>
+            </div>
+            <form id="addLoadForm" onsubmit="addLoad(event)">
+                <div class="form-group">
+                    <label for="carrierName">Carrier Name *</label>
+                    <input type="text" id="carrierName" required placeholder="e.g., ABC Trucking">
+                </div>
+
+                <div class="form-group">
+                    <label for="rateConNumber">Rate Con Number *</label>
+                    <input type="text" id="rateConNumber" required placeholder="e.g., RC-2024-001">
+                </div>
+
+                <div class="form-group">
+                    <label for="pickupCity">Pickup City, State *</label>
+                    <input type="text" id="pickupCity" required placeholder="e.g., Denver, CO">
+                </div>
+
+                <div class="form-group">
+                    <label for="deliveryCity">Delivery City, State *</label>
+                    <input type="text" id="deliveryCity" required placeholder="e.g., Chicago, IL">
+                </div>
+
+                <div class="form-group">
+                    <label for="loadNotes">Load Notes (Optional)</label>
+                    <textarea id="loadNotes" placeholder="e.g., Fragile items, Requires signature"></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="closeModal('addLoadModal')">Cancel</button>
+                    <button type="submit" class="btn-primary">Add Load</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- PDF Import Modal -->
+    <div class="modal" id="pdfModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Import from PDF</h2>
+                <button class="close-btn" onclick="closeModal('pdfModal')">&times;</button>
+            </div>
+            <form id="pdfForm" onsubmit="processPdf(event)">
+                <div class="pdf-upload-section">
+                    <p>Upload your Rate Con PDF</p>
+                    <input type="file" id="pdfFile" accept=".pdf" required onchange="extractPdfData(event)">
+                    <div class="extraction-status" id="extractionStatus"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="pdfCarrierName">Carrier Name *</label>
+                    <input type="text" id="pdfCarrierName" required placeholder="e.g., ABC Trucking">
+                </div>
+
+                <div class="form-group">
+                    <label for="pdfRateConNumber">Rate Con Number *</label>
+                    <input type="text" id="pdfRateConNumber" required placeholder="e.g., RC-2024-001">
+                </div>
+
+                <div class="form-group">
+                    <label for="pdfPickupCity">Pickup City, State *</label>
+                    <input type="text" id="pdfPickupCity" required placeholder="e.g., Denver, CO">
+                </div>
+
+                <div class="form-group">
+                    <label for="pdfDeliveryCity">Delivery City, State *</label>
+                    <input type="text" id="pdfDeliveryCity" required placeholder="e.g., Chicago, IL">
+                </div>
+
+                <div class="form-group">
+                    <label for="pdfLoadNotes">Load Notes (Optional)</label>
+                    <textarea id="pdfLoadNotes" placeholder="Notes from PDF"></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="closeModal('pdfModal')">Cancel</button>
+                    <button type="submit" class="btn-primary">Create Load</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Load Modal -->
+    <div class="modal" id="editLoadModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Load</h2>
+                <button class="close-btn" onclick="closeModal('editLoadModal')">&times;</button>
+            </div>
+            <form onsubmit="updateLoad(event)">
+                <div class="form-group">
+                    <label for="editCarrierName">Carrier Name</label>
+                    <input type="text" id="editCarrierName" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="editRateConNumber">Rate Con Number</label>
+                    <input type="text" id="editRateConNumber" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="editPickupCity">Pickup City, State</label>
+                    <input type="text" id="editPickupCity" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="editDeliveryCity">Delivery City, State</label>
+                    <input type="text" id="editDeliveryCity" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="editLoadNotes">Load Notes</label>
+                    <textarea id="editLoadNotes"></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="closeModal('editLoadModal')">Cancel</button>
+                    <button type="submit" class="btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        const CORRECT_PASSWORD = 'TEST';
+        const STAGES = ['dispatched', 'in-transit', 'delivered', 'pod-received'];
+        const STAGE_LABELS = {
+            'dispatched': 'Dispatched',
+            'in-transit': 'In Transit',
+            'delivered': 'Delivered',
+            'pod-received': 'POD Received'
+        };
+        const MAX_LOAD_AGE_DAYS = 7;
+
+        // Valid US state abbreviations
+        const VALID_STATES = [
+            'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+            'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+            'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+            'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+            'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'
+        ];
+
+        let loads = [];
+        let editingLoadId = null;
+        let expandedLoadId = null;
+
+        function checkPassword() {
+            const password = document.getElementById('passwordInput').value;
+            if (password === CORRECT_PASSWORD) {
+                document.getElementById('passwordScreen').style.display = 'none';
+                document.getElementById('appContainer').classList.add('active');
+                loadFromStorage();
+                renderLoads();
+            } else {
+                document.getElementById('passwordError').style.display = 'block';
+                document.getElementById('passwordInput').value = '';
+                document.getElementById('passwordInput').focus();
+            }
+        }
+
+        function generateId() {
+            if (window.crypto && crypto.randomUUID) {
+                return crypto.randomUUID();
+            }
+            // Fallback for older browsers: timestamp + random suffix avoids
+            // collisions when two loads are added in the same millisecond.
+            return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        }
+
+        function isLoadFresh(load) {
+            const cutoff = Date.now() - MAX_LOAD_AGE_DAYS * 24 * 60 * 60 * 1000;
+            return new Date(load.createdAt).getTime() > cutoff;
+        }
+
+        function loadFromStorage() {
+            let stored;
+            try {
+                stored = JSON.parse(localStorage.getItem('loads') || '[]');
+            } catch (err) {
+                console.error('Corrupted load data in storage, resetting.', err);
+                stored = [];
+            }
+            loads = stored.filter(isLoadFresh);
+            saveToStorage();
+        }
+
+        function saveToStorage() {
+            localStorage.setItem('loads', JSON.stringify(loads));
+        }
+
+        function openAddLoadModal() {
+            document.getElementById('addLoadModal').classList.add('active');
+            document.getElementById('carrierName').focus();
+        }
+
+        function openPdfModal() {
+            document.getElementById('pdfModal').classList.add('active');
+        }
+
+        function resetForm(formId) {
+            const form = document.getElementById(formId);
+            if (form) form.reset();
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+            if (modalId === 'addLoadModal') {
+                resetForm('addLoadForm');
+            } else if (modalId === 'pdfModal') {
+                resetForm('pdfForm');
+                const statusDiv = document.getElementById('extractionStatus');
+                statusDiv.className = 'extraction-status';
+                statusDiv.textContent = '';
+            } else if (modalId === 'editLoadModal') {
+                editingLoadId = null;
+            }
+        }
+
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                closeModal(event.target.id);
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                document.querySelectorAll('.modal.active').forEach(modal => closeModal(modal.id));
+            }
+        });
+
+        async function extractPdfData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const statusDiv = document.getElementById('extractionStatus');
+            statusDiv.className = 'extraction-status';
+            statusDiv.textContent = 'Reading PDF…';
+            statusDiv.style.display = 'block';
+
+            const reader = new FileReader();
+
+            reader.onload = async function(e) {
+                try {
+                    const pdf = await pdfjsLib.getDocument(e.target.result).promise;
+                    const page = await pdf.getPage(1);
+                    const textContent = await page.getTextContent();
+                    const text = textContent.items.map(item => item.str).join(' ');
+
+                    let carrierName = '';
+                    let rateConNumber = '';
+                    let pickupCity = '';
+                    let deliveryCity = '';
+
+                    // Extract carrier name (look for trucking company patterns).
+                    // Case-insensitive so it also matches normal mixed-case PDFs,
+                    // not just all-caps ones.
+                    const carrierMatch = text.match(/([A-Za-z][A-Za-z0-9\s&,.'-]*?(?:TRUCKING|TRANSPORT|TRANSPORTATION|LOGISTICS|CARRIERS?|FREIGHT|LLC|INC)\b[A-Za-z0-9\s&,.'-]*)/i);
+                    if (carrierMatch) {
+                        carrierName = carrierMatch[0].trim().replace(/\s{2,}/g, ' ');
+                    }
+
+                    // Extract order/rate con number - try a few common label formats.
+                    const rateConPatterns = [
+                        /Order\s*#[:\s]*([A-Za-z0-9-]+)/i,
+                        /Rate\s*Con(?:firmation)?\s*#?[:\s]*([A-Za-z0-9-]+)/i,
+                        /Load\s*#[:\s]*([A-Za-z0-9-]+)/i,
+                        /Confirmation\s*#[:\s]*([A-Za-z0-9-]+)/i
+                    ];
+                    for (const pattern of rateConPatterns) {
+                        const m = text.match(pattern);
+                        if (m) {
+                            rateConNumber = m[1].trim();
+                            break;
+                        }
+                    }
+
+                    // Extract pickup and delivery cities. City names are usually
+                    // mixed case ("Denver"), while the state code is uppercase -
+                    // matching only ALL CAPS cities was missing almost every
+                    // real-world rate confirmation.
+                    const cityStatePattern = /([A-Za-z][A-Za-z\s]*?),?\s+([A-Z]{2})(?=[\s,.]|$)/g;
+
+                    function findCityState(searchText) {
+                        const match = cityStatePattern.exec(searchText);
+                        cityStatePattern.lastIndex = 0; // reset shared regex state
+                        if (!match) return null;
+                        const city = match[1].trim();
+                        const state = match[2].trim();
+                        if (VALID_STATES.includes(state) && city.length > 2 && city.length < 30) {
+                            return `${city}, ${state}`;
+                        }
+                        return null;
+                    }
+
+                    // Rate cons almost always label pickup/delivery explicitly.
+                    // Search near those labels first - it's far more reliable
+                    // than grabbing the first two city/state pairs in the raw
+                    // text, which are just as likely to be the broker's or
+                    // carrier's mailing address.
+                    const WINDOW = 150; // chars to search after a label
+                    function findLabeledLocation(labelPatterns) {
+                        for (const pattern of labelPatterns) {
+                            const m = pattern.exec(text);
+                            if (m) {
+                                const start = m.index + m[0].length;
+                                const found = findCityState(text.slice(start, start + WINDOW));
+                                if (found) return found;
+                            }
+                        }
+                        return null;
+                    }
+
+                    const pickupLabels = [
+                        /Pick\s*-?\s*Up\s*(?:Location|Address)?[:\s]*/i,
+                        /Origin[:\s]*/i,
+                        /Shipper[:\s]*/i,
+                        /Ship\s*From[:\s]*/i
+                    ];
+                    const deliveryLabels = [
+                        /Delivery\s*(?:Location|Address)?[:\s]*/i,
+                        /Drop\s*-?\s*Off[:\s]*/i,
+                        /Destination[:\s]*/i,
+                        /Consignee[:\s]*/i,
+                        /Ship\s*To[:\s]*/i
+                    ];
+
+                    pickupCity = findLabeledLocation(pickupLabels) || '';
+                    deliveryCity = findLabeledLocation(deliveryLabels) || '';
+
+                    // Fallback: if labels weren't found (or the PDF just lists
+                    // addresses in order), fall back to the first two distinct
+                    // city/state pairs anywhere in the document.
+                    if (!pickupCity || !deliveryCity) {
+                        const matches = [...text.matchAll(cityStatePattern)];
+                        const validCities = [];
+                        for (const match of matches) {
+                            const city = match[1].trim();
+                            const state = match[2].trim();
+                            if (VALID_STATES.includes(state) && city.length > 2 && city.length < 30) {
+                                const candidate = `${city}, ${state}`;
+                                if (candidate !== pickupCity && !validCities.includes(candidate)) {
+                                    validCities.push(candidate);
+                                }
+                            }
+                        }
+                        if (!pickupCity && validCities.length > 0) pickupCity = validCities[0];
+                        if (!deliveryCity) {
+                            deliveryCity = validCities.find(c => c !== pickupCity) || '';
+                        }
+                    }
+
+                    // Fill in the fields
+                    if (carrierName) document.getElementById('pdfCarrierName').value = carrierName;
+                    if (rateConNumber) document.getElementById('pdfRateConNumber').value = rateConNumber;
+                    if (pickupCity) document.getElementById('pdfPickupCity').value = pickupCity;
+                    if (deliveryCity) document.getElementById('pdfDeliveryCity').value = deliveryCity;
+
+                    // Show status
+                    if (carrierName && rateConNumber && pickupCity && deliveryCity) {
+                        statusDiv.textContent = '✓ PDF extracted successfully! Review and adjust if needed.';
+                        statusDiv.className = 'extraction-status success';
+                    } else {
+                        let missing = [];
+                        if (!carrierName) missing.push('carrier');
+                        if (!rateConNumber) missing.push('rate con');
+                        if (!pickupCity || !deliveryCity) missing.push('cities');
+
+                        statusDiv.textContent = '⚠ Could not extract ' + missing.join(', ') + '. Please fill in manually.';
+                        statusDiv.className = 'extraction-status warning';
+                    }
+                } catch (err) {
+                    console.error('PDF extraction failed:', err);
+                    statusDiv.textContent = '✗ Could not extract PDF. Please fill in manually.';
+                    statusDiv.className = 'extraction-status error';
+                }
+            };
+
+            reader.onerror = function() {
+                statusDiv.textContent = '✗ Could not read the file. Please try again.';
+                statusDiv.className = 'extraction-status error';
+            };
+
+            reader.readAsArrayBuffer(file);
+        }
+
+        function addLoad(e) {
+            e.preventDefault();
+
+            const load = {
+                id: generateId(),
+                carrierName: document.getElementById('carrierName').value.trim(),
+                rateConNumber: document.getElementById('rateConNumber').value.trim(),
+                pickupCity: document.getElementById('pickupCity').value.trim(),
+                deliveryCity: document.getElementById('deliveryCity').value.trim(),
+                loadNotes: document.getElementById('loadNotes').value.trim(),
+                status: 'dispatched',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            };
+
+            loads.unshift(load);
+            saveToStorage();
+            renderLoads();
+            closeModal('addLoadModal');
+        }
+
+        function processPdf(e) {
+            e.preventDefault();
+
+            const load = {
+                id: generateId(),
+                carrierName: document.getElementById('pdfCarrierName').value.trim(),
+                rateConNumber: document.getElementById('pdfRateConNumber').value.trim(),
+                pickupCity: document.getElementById('pdfPickupCity').value.trim(),
+                deliveryCity: document.getElementById('pdfDeliveryCity').value.trim(),
+                loadNotes: document.getElementById('pdfLoadNotes').value.trim(),
+                status: 'dispatched',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            };
+
+            loads.unshift(load);
+            saveToStorage();
+            renderLoads();
+            closeModal('pdfModal');
+        }
+
+        function toggleCardExpand(loadId, e) {
+            e.stopPropagation();
+            expandedLoadId = (expandedLoadId === loadId) ? null : loadId;
+            renderLoads();
+        }
+
+        function updateLoadStatus(loadId, newStatus) {
+            const load = loads.find(l => l.id === loadId);
+            if (load) {
+                load.status = newStatus;
+                load.updatedAt = new Date().toISOString();
+                saveToStorage();
+                renderLoads();
+            }
+        }
+
+        function moveLoadForward(loadId) {
+            const load = loads.find(l => l.id === loadId);
+            if (load) {
+                const currentIndex = STAGES.indexOf(load.status);
+                if (currentIndex < STAGES.length - 1) {
+                    updateLoadStatus(loadId, STAGES[currentIndex + 1]);
+                }
+            }
+        }
+
+        function moveLoadBackward(loadId) {
+            const load = loads.find(l => l.id === loadId);
+            if (load) {
+                const currentIndex = STAGES.indexOf(load.status);
+                if (currentIndex > 0) {
+                    updateLoadStatus(loadId, STAGES[currentIndex - 1]);
+                }
+            }
+        }
+
+        function openEditModal(loadId) {
+            const load = loads.find(l => l.id === loadId);
+            if (load) {
+                editingLoadId = loadId;
+                document.getElementById('editCarrierName').value = load.carrierName;
+                document.getElementById('editRateConNumber').value = load.rateConNumber;
+                document.getElementById('editPickupCity').value = load.pickupCity;
+                document.getElementById('editDeliveryCity').value = load.deliveryCity;
+                document.getElementById('editLoadNotes').value = load.loadNotes || '';
+                document.getElementById('editLoadModal').classList.add('active');
+            }
+            closeDropdown(loadId);
+        }
+
+        function updateLoad(e) {
+            e.preventDefault();
+            const load = loads.find(l => l.id === editingLoadId);
+            if (load) {
+                load.carrierName = document.getElementById('editCarrierName').value.trim();
+                load.rateConNumber = document.getElementById('editRateConNumber').value.trim();
+                load.pickupCity = document.getElementById('editPickupCity').value.trim();
+                load.deliveryCity = document.getElementById('editDeliveryCity').value.trim();
+                load.loadNotes = document.getElementById('editLoadNotes').value.trim();
+                load.updatedAt = new Date().toISOString();
+                saveToStorage();
+                renderLoads();
+            }
+            closeModal('editLoadModal');
+        }
+
+        function deleteLoad(loadId) {
+            if (confirm('Delete this load?')) {
+                loads = loads.filter(l => l.id !== loadId);
+                if (expandedLoadId === loadId) expandedLoadId = null;
+                saveToStorage();
+                renderLoads();
+            }
+            closeDropdown(loadId);
+        }
+
+        function duplicateLoad(loadId) {
+            const index = loads.findIndex(l => l.id === loadId);
+            if (index === -1) return;
+
+            const original = loads[index];
+            const copy = {
+                ...original,
+                id: generateId(),
+                status: 'dispatched',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            };
+
+            // Insert right after the original so duplicates for the same
+            // lane/carrier stay grouped together in the list.
+            loads.splice(index + 1, 0, copy);
+            saveToStorage();
+            renderLoads();
+            closeDropdown(loadId);
+        }
+
+        function clearOldLoads() {
+            const countBefore = loads.length;
+            loads = loads.filter(isLoadFresh);
+            const deleted = countBefore - loads.length;
+
+            if (deleted > 0) {
+                saveToStorage();
+                renderLoads();
+                alert(`Cleaned up ${deleted} old load(s)`);
+            } else {
+                alert('No loads older than 7 days');
+            }
+        }
+
+        function toggleDropdown(loadId, e) {
+            e.stopPropagation();
+            const menu = document.querySelector(`[data-menu="${loadId}"]`);
+            if (!menu) return;
+            const isOpen = menu.classList.contains('active');
+            document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.remove('active'));
+            if (!isOpen) menu.classList.add('active');
+        }
+
+        function closeDropdown(loadId) {
+            const menu = document.querySelector(`[data-menu="${loadId}"]`);
+            if (menu) {
+                menu.classList.remove('active');
+            }
+        }
+
+        document.addEventListener('click', () => {
+            document.querySelectorAll('.dropdown-menu').forEach(menu => {
+                menu.classList.remove('active');
+            });
+        });
+
+        function renderLoads() {
+            const container = document.getElementById('loadsContainer');
+
+            if (loads.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <h2>No Active Loads</h2>
+                        <p>Add your first load to get started</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = loads.map(load => `
+                <div class="load-card ${load.status}">
+                    <div class="load-card-collapsed" onclick="toggleCardExpand('${load.id}', event)">
+                        <div class="load-primary">
+                            <div class="load-route">${escapeHtml(load.pickupCity)} → ${escapeHtml(load.deliveryCity)}</div>
+                            <div class="load-carrier">${escapeHtml(load.carrierName)}</div>
+                        </div>
+                        <div class="load-secondary">
+                            <div class="load-rate-con">${escapeHtml(load.rateConNumber)}</div>
+                            <span class="status-badge-compact ${load.status}">${STAGE_LABELS[load.status] || load.status}</span>
+                            <div class="load-card-menu">
+                                <button class="menu-btn" onclick="toggleDropdown('${load.id}', event)">⋮</button>
+                                <div class="dropdown-menu" data-menu="${load.id}">
+                                    <button onclick="openEditModal('${load.id}')">Edit</button>
+                                    <button class="delete" onclick="deleteLoad('${load.id}')">Delete</button>
+                                    <button onclick="duplicateLoad('${load.id}')">Duplicate</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="load-card-expanded ${expandedLoadId === load.id ? 'active' : ''}">
+                        ${load.loadNotes ? `
+                            <div class="expanded-section">
+                                <div class="expanded-section-label">Notes</div>
+                                <div class="expanded-section-value">${escapeHtml(load.loadNotes)}</div>
+                            </div>
+                        ` : ''}
+                        <div class="expanded-section">
+                            <div class="expanded-section-label">Status</div>
+                            <div class="stage-buttons">
+                                ${STAGES.map((stage) => `
+                                    <button
+                                        type="button"
+                                        class="stage-btn ${load.status === stage ? 'active' : ''}"
+                                        onclick="updateLoadStatus('${load.id}', '${stage}')"
+                                        title="Set to ${STAGE_LABELS[stage]}"
+                                    >
+                                        ${STAGE_LABELS[stage]}
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>
+                        <div class="load-actions">
+                            ${STAGES.indexOf(load.status) > 0 ? `
+                                <button class="btn-secondary btn-small" onclick="moveLoadBackward('${load.id}')">← Back</button>
+                            ` : ''}
+                            ${STAGES.indexOf(load.status) < STAGES.length - 1 ? `
+                                <button class="btn-primary btn-small" onclick="moveLoadForward('${load.id}')">Forward →</button>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return String(text).replace(/[&<>"']/g, m => map[m]);
+        }
+    </script>
+</body>
+</html>

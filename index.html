@@ -14,7 +14,7 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #1a3a52 0%, #0f2438 100%);
             min-height: 100vh;
             padding: 20px;
         }
@@ -60,14 +60,14 @@
 
         .password-input:focus {
             outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            border-color: #1a3a52;
+            box-shadow: 0 0 0 3px rgba(26, 58, 82, 0.1);
         }
 
         .password-btn {
             width: 100%;
             padding: 15px;
-            background: #667eea;
+            background: #1a3a52;
             color: white;
             border: none;
             border-radius: 8px;
@@ -78,9 +78,9 @@
         }
 
         .password-btn:hover {
-            background: #5568d3;
+            background: #0f2438;
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 4px 12px rgba(26, 58, 82, 0.4);
         }
 
         .password-error {
@@ -147,14 +147,14 @@
         }
 
         .btn-primary {
-            background: #667eea;
+            background: #1a3a52;
             color: white;
         }
 
         .btn-primary:hover {
-            background: #5568d3;
+            background: #0f2438;
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 4px 12px rgba(26, 58, 82, 0.4);
         }
 
         .btn-secondary {
@@ -262,8 +262,8 @@
         input[type="file"]:focus,
         textarea:focus {
             outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            border-color: #1a3a52;
+            box-shadow: 0 0 0 3px rgba(26, 58, 82, 0.1);
         }
 
         textarea {
@@ -295,6 +295,27 @@
             font-weight: 600;
             margin-bottom: 12px;
             font-size: 14px;
+        }
+
+        .extraction-status {
+            margin-top: 15px;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            display: none;
+        }
+
+        .extraction-status.success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            display: block;
+        }
+
+        .extraction-status.error {
+            background: #ffebee;
+            color: #c62828;
+            display: block;
         }
 
         .loads-container {
@@ -530,9 +551,9 @@
         }
 
         .stage-btn.active {
-            background: #667eea;
+            background: #1a3a52;
             color: white;
-            border-color: #667eea;
+            border-color: #1a3a52;
         }
 
         .load-actions {
@@ -679,7 +700,8 @@
             <form onsubmit="processPdf(event)">
                 <div class="pdf-upload-section">
                     <p>Upload your Rate Con PDF</p>
-                    <input type="file" id="pdfFile" accept=".pdf" required>
+                    <input type="file" id="pdfFile" accept=".pdf" required onchange="extractPdfData(event)">
+                    <div class="extraction-status" id="extractionStatus"></div>
                 </div>
 
                 <div class="form-group">
@@ -815,6 +837,70 @@
             }
         }
 
+        async function extractPdfData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const statusDiv = document.getElementById('extractionStatus');
+            const reader = new FileReader();
+
+            reader.onload = async function(e) {
+                try {
+                    const pdf = await pdfjsLib.getDocument(e.target.result).promise;
+                    const page = await pdf.getPage(1);
+                    const textContent = await page.getTextContent();
+                    const text = textContent.items.map(item => item.str).join(' ');
+
+                    // Extract data based on your PDF layout
+                    let carrierName = '';
+                    let rateConNumber = '';
+                    let pickupCity = '';
+                    let deliveryCity = '';
+
+                    // Look for carrier name (after "Carrier Confirmation" or company name pattern)
+                    const carrierMatch = text.match(/O\s*GOMEZ\s*TRUCKING\s*LLC|[A-Z][A-Z0-9\s]*TRUCKING[A-Z0-9\s]*/i);
+                    if (carrierMatch) {
+                        carrierName = carrierMatch[0].trim();
+                    }
+
+                    // Look for order number ("Order #:" followed by digits)
+                    const orderMatch = text.match(/Order\s*#[:\s]*([0-9]+)/i);
+                    if (orderMatch) {
+                        rateConNumber = orderMatch[1].trim();
+                    }
+
+                    // Look for pickup/delivery cities and states
+                    const routeMatch = text.match(/([A-Z]{2,})[,\s]+([A-Z]{2})\s*[→\-]\s*([A-Z]{2,})[,\s]+([A-Z]{2})/i);
+                    if (routeMatch) {
+                        pickupCity = (routeMatch[1] + ', ' + routeMatch[2]).trim();
+                        deliveryCity = (routeMatch[3] + ', ' + routeMatch[4]).trim();
+                    } else {
+                        // Fallback: look for city patterns
+                        const citiesMatch = text.match(/([A-Z][A-Z\s]*)[,\s]([A-Z]{2}).*?([A-Z][A-Z\s]*)[,\s]([A-Z]{2})/i);
+                        if (citiesMatch) {
+                            pickupCity = (citiesMatch[1].trim() + ', ' + citiesMatch[2].trim()).toUpperCase();
+                            deliveryCity = (citiesMatch[3].trim() + ', ' + citiesMatch[4].trim()).toUpperCase();
+                        }
+                    }
+
+                    // Fill in the fields
+                    if (carrierName) document.getElementById('pdfCarrierName').value = carrierName;
+                    if (rateConNumber) document.getElementById('pdfRateConNumber').value = rateConNumber;
+                    if (pickupCity) document.getElementById('pdfPickupCity').value = pickupCity;
+                    if (deliveryCity) document.getElementById('pdfDeliveryCity').value = deliveryCity;
+
+                    // Show success message
+                    statusDiv.textContent = '✓ PDF extracted successfully! Review and adjust if needed.';
+                    statusDiv.className = 'extraction-status success';
+                } catch (err) {
+                    statusDiv.textContent = '✗ Could not extract PDF. Please fill in manually.';
+                    statusDiv.className = 'extraction-status error';
+                }
+            };
+
+            reader.readAsArrayBuffer(file);
+        }
+
         function addLoad(e) {
             e.preventDefault();
             
@@ -857,6 +943,7 @@
             renderLoads();
             closeModal('pdfModal');
             e.target.reset();
+            document.getElementById('extractionStatus').className = '';
         }
 
         function toggleCardExpand(loadId, e) {

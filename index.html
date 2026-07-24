@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Load Tracker</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -16,6 +17,85 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
+        }
+
+        .password-screen {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .password-container {
+            background: white;
+            padding: 50px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+
+        .password-container h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .password-container p {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+
+        .password-input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+        .password-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .password-btn {
+            width: 100%;
+            padding: 15px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .password-btn:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .password-error {
+            color: #d32f2f;
+            margin-top: 15px;
+            font-weight: 600;
+            display: none;
+        }
+
+        .app-container {
+            display: none;
+        }
+
+        .app-container.active {
+            display: block;
         }
 
         .container {
@@ -38,13 +118,15 @@
 
         h1 {
             color: #333;
-            font-size: 28px;
+            font-size: 32px;
+            font-weight: 700;
         }
 
         .header-subtitle {
             color: #999;
             margin-top: 5px;
-            font-size: 14px;
+            font-size: 16px;
+            font-weight: 600;
         }
 
         .header-actions {
@@ -54,12 +136,12 @@
         }
 
         button {
-            padding: 12px 24px;
+            padding: 14px 28px;
             border: none;
             border-radius: 8px;
             cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
+            font-size: 15px;
+            font-weight: 700;
             transition: all 0.3s ease;
         }
 
@@ -84,17 +166,8 @@
         }
 
         .btn-small {
-            padding: 8px 16px;
-            font-size: 12px;
-        }
-
-        .btn-danger {
-            background: #ff6b6b;
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background: #ee5a52;
+            padding: 10px 18px;
+            font-size: 13px;
         }
 
         .modal {
@@ -116,7 +189,7 @@
 
         .modal-content {
             background: white;
-            padding: 30px;
+            padding: 40px;
             border-radius: 12px;
             width: 90%;
             max-width: 500px;
@@ -129,20 +202,21 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 25px;
             padding-bottom: 15px;
             border-bottom: 2px solid #f0f0f0;
         }
 
         .modal-header h2 {
             color: #333;
-            font-size: 22px;
+            font-size: 26px;
+            font-weight: 700;
         }
 
         .close-btn {
             background: none;
             border: none;
-            font-size: 28px;
+            font-size: 32px;
             cursor: pointer;
             color: #999;
             padding: 0;
@@ -158,15 +232,15 @@
         }
 
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 25px;
         }
 
         label {
             display: block;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             color: #333;
-            font-weight: 600;
-            font-size: 14px;
+            font-weight: 700;
+            font-size: 16px;
         }
 
         input[type="text"],
@@ -174,11 +248,12 @@
         input[type="file"],
         textarea {
             width: 100%;
-            padding: 12px;
-            border: 1px solid #ddd;
+            padding: 14px;
+            border: 2px solid #ddd;
             border-radius: 8px;
-            font-size: 14px;
+            font-size: 16px;
             font-family: inherit;
+            font-weight: 600;
         }
 
         input[type="text"]:focus,
@@ -192,32 +267,48 @@
 
         textarea {
             resize: vertical;
-            min-height: 80px;
+            min-height: 100px;
         }
 
         .form-actions {
             display: flex;
             gap: 15px;
-            margin-top: 25px;
+            margin-top: 30px;
         }
 
         .form-actions button {
             flex: 1;
         }
 
+        .pdf-upload-section {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+            border: 2px dashed #ddd;
+            text-align: center;
+        }
+
+        .pdf-upload-section p {
+            color: #666;
+            font-weight: 600;
+            margin-bottom: 15px;
+            font-size: 15px;
+        }
+
         .loads-container {
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            gap: 12px;
         }
 
         .load-card {
             background: white;
             border-radius: 8px;
-            padding: 20px;
+            padding: 18px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
             transition: all 0.3s ease;
-            border-left: 5px solid #ccc;
+            border-left: 4px solid #ccc;
         }
 
         .load-card:hover {
@@ -254,23 +345,24 @@
         }
 
         .load-card-title {
-            font-size: 16px;
-            font-weight: 600;
+            font-size: 18px;
+            font-weight: 700;
             color: #333;
         }
 
         .load-card-subtitle {
-            font-size: 12px;
-            color: #999;
+            font-size: 14px;
+            color: #666;
             margin-top: 4px;
+            font-weight: 600;
         }
 
         .status-badge {
             display: inline-block;
-            padding: 6px 12px;
+            padding: 10px 16px;
             border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
+            font-size: 14px;
+            font-weight: 700;
         }
 
         .status-badge.dispatched {
@@ -302,7 +394,7 @@
             border: none;
             color: #999;
             cursor: pointer;
-            font-size: 18px;
+            font-size: 20px;
             padding: 4px 8px;
         }
 
@@ -330,13 +422,14 @@
             display: block;
             width: 100%;
             text-align: left;
-            padding: 12px 16px;
+            padding: 14px 18px;
             border: none;
             background: none;
             cursor: pointer;
             color: #333;
-            font-size: 13px;
+            font-size: 14px;
             border-radius: 0;
+            font-weight: 600;
         }
 
         .dropdown-menu button:first-child {
@@ -361,7 +454,7 @@
             display: flex;
             justify-content: space-between;
             gap: 30px;
-            margin-bottom: 15px;
+            margin-bottom: 18px;
             flex-wrap: wrap;
         }
 
@@ -371,34 +464,37 @@
         }
 
         .load-info-label {
-            font-weight: 600;
+            font-weight: 700;
             color: #666;
-            font-size: 12px;
+            font-size: 14px;
             text-transform: uppercase;
-            margin-bottom: 4px;
+            margin-bottom: 6px;
+            letter-spacing: 0.5px;
         }
 
         .load-info-value {
             color: #333;
-            font-size: 14px;
+            font-size: 16px;
+            font-weight: 600;
         }
 
         .stage-buttons {
             display: flex;
             gap: 8px;
-            margin: 15px 0;
+            margin: 18px 0;
             flex-wrap: wrap;
         }
 
         .stage-btn {
-            padding: 8px 14px;
-            font-size: 12px;
+            padding: 10px 16px;
+            font-size: 13px;
             border-radius: 6px;
-            border: 1px solid #ddd;
+            border: 2px solid #ddd;
             background: #f9f9f9;
             color: #333;
             cursor: pointer;
             transition: all 0.2s ease;
+            font-weight: 700;
         }
 
         .stage-btn:hover {
@@ -414,29 +510,33 @@
 
         .load-actions {
             display: flex;
-            gap: 8px;
+            gap: 10px;
             flex-wrap: wrap;
         }
 
         .empty-state {
             text-align: center;
-            padding: 60px 20px;
+            padding: 80px 20px;
             color: #999;
         }
 
         .empty-state-icon {
-            font-size: 48px;
+            font-size: 64px;
             margin-bottom: 20px;
         }
 
         .empty-state h2 {
             color: #666;
             margin-bottom: 10px;
+            font-size: 24px;
+            font-weight: 700;
         }
 
         .empty-state p {
             color: #999;
             margin-bottom: 20px;
+            font-size: 16px;
+            font-weight: 600;
         }
 
         @media (max-width: 768px) {
@@ -451,7 +551,7 @@
             }
 
             h1 {
-                font-size: 24px;
+                font-size: 28px;
             }
 
             .load-info {
@@ -478,23 +578,38 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <div>
-                <h1>📦 Load Tracker</h1>
-                <p class="header-subtitle">Track active loads in real-time</p>
-            </div>
-            <div class="header-actions">
-                <button class="btn-primary" onclick="openAddLoadModal()">+ Add Load</button>
-                <button class="btn-secondary" onclick="clearOldLoads()">Clean History</button>
-            </div>
-        </header>
+    <!-- Password Screen -->
+    <div class="password-screen" id="passwordScreen">
+        <div class="password-container">
+            <h1>📦 Load Tracker</h1>
+            <p>Enter password to access</p>
+            <input type="password" id="passwordInput" class="password-input" placeholder="Enter password" onkeypress="if(event.key==='Enter') checkPassword()">
+            <button class="password-btn" onclick="checkPassword()">Access</button>
+            <div class="password-error" id="passwordError">Incorrect password. Try again.</div>
+        </div>
+    </div>
 
-        <div class="loads-container" id="loadsContainer">
-            <div class="empty-state">
-                <div class="empty-state-icon">📭</div>
-                <h2>No Active Loads</h2>
-                <p>Add your first load to get started</p>
+    <!-- Main App -->
+    <div class="app-container" id="appContainer">
+        <div class="container">
+            <header>
+                <div>
+                    <h1>📦 Load Tracker</h1>
+                    <p class="header-subtitle">Track active loads in real-time</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn-primary" onclick="openAddLoadModal()">+ Add Load</button>
+                    <button class="btn-secondary" onclick="openPdfModal()">📄 Import PDF</button>
+                    <button class="btn-secondary" onclick="clearOldLoads()">Clean History</button>
+                </div>
+            </header>
+
+            <div class="loads-container" id="loadsContainer">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📭</div>
+                    <h2>No Active Loads</h2>
+                    <p>Add your first load to get started</p>
+                </div>
             </div>
         </div>
     </div>
@@ -534,6 +649,52 @@
 
                 <div class="form-actions">
                     <button type="button" class="btn-secondary" onclick="closeModal('addLoadModal')">Cancel</button>
+                    <button type="submit" class="btn-primary">Add Load</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- PDF Import Modal -->
+    <div class="modal" id="pdfModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Import from PDF</h2>
+                <button class="close-btn" onclick="closeModal('pdfModal')">&times;</button>
+            </div>
+            <form onsubmit="processPdf(event)">
+                <div class="pdf-upload-section">
+                    <p>Upload your Rate Con PDF</p>
+                    <input type="file" id="pdfFile" accept=".pdf" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="pdfCarrierName">Carrier Name *</label>
+                    <input type="text" id="pdfCarrierName" required placeholder="e.g., ABC Trucking">
+                </div>
+
+                <div class="form-group">
+                    <label for="pdfRateConNumber">Rate Con Number *</label>
+                    <input type="text" id="pdfRateConNumber" required placeholder="e.g., RC-2024-001">
+                </div>
+
+                <div class="form-group">
+                    <label for="pdfPickupCity">Pickup City, State *</label>
+                    <input type="text" id="pdfPickupCity" required placeholder="e.g., Denver, CO">
+                </div>
+
+                <div class="form-group">
+                    <label for="pdfDeliveryCity">Delivery City, State *</label>
+                    <input type="text" id="pdfDeliveryCity" required placeholder="e.g., Chicago, IL">
+                </div>
+
+                <div class="form-group">
+                    <label for="pdfLoadNotes">Load Notes (Optional)</label>
+                    <textarea id="pdfLoadNotes" placeholder="Notes from PDF"></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="closeModal('pdfModal')">Cancel</button>
                     <button type="submit" class="btn-primary">Add Load</button>
                 </div>
             </form>
@@ -582,6 +743,9 @@
     </div>
 
     <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        const CORRECT_PASSWORD = 'TEST';
         const STAGES = ['dispatched', 'in-transit', 'delivered', 'pod-received'];
         const STAGE_LABELS = {
             'dispatched': 'Dispatched',
@@ -593,10 +757,19 @@
         let loads = [];
         let editingLoadId = null;
 
-        document.addEventListener('DOMContentLoaded', () => {
-            loadFromStorage();
-            renderLoads();
-        });
+        // Password check
+        function checkPassword() {
+            const password = document.getElementById('passwordInput').value;
+            if (password === CORRECT_PASSWORD) {
+                document.getElementById('passwordScreen').style.display = 'none';
+                document.getElementById('appContainer').classList.add('active');
+                loadFromStorage();
+                renderLoads();
+            } else {
+                document.getElementById('passwordError').style.display = 'block';
+                document.getElementById('passwordInput').value = '';
+            }
+        }
 
         function loadFromStorage() {
             const stored = localStorage.getItem('loads');
@@ -612,6 +785,10 @@
 
         function openAddLoadModal() {
             document.getElementById('addLoadModal').classList.add('active');
+        }
+
+        function openPdfModal() {
+            document.getElementById('pdfModal').classList.add('active');
         }
 
         function closeModal(modalId) {
@@ -643,6 +820,28 @@
             saveToStorage();
             renderLoads();
             closeModal('addLoadModal');
+            e.target.reset();
+        }
+
+        function processPdf(e) {
+            e.preventDefault();
+            
+            const load = {
+                id: Date.now(),
+                carrierName: document.getElementById('pdfCarrierName').value,
+                rateConNumber: document.getElementById('pdfRateConNumber').value,
+                pickupCity: document.getElementById('pdfPickupCity').value,
+                deliveryCity: document.getElementById('pdfDeliveryCity').value,
+                loadNotes: document.getElementById('pdfLoadNotes').value,
+                status: 'dispatched',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            };
+
+            loads.unshift(load);
+            saveToStorage();
+            renderLoads();
+            closeModal('pdfModal');
             e.target.reset();
         }
 

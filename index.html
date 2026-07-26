@@ -287,6 +287,12 @@
             margin-bottom: 20px;
             border: 2px dashed #ddd;
             text-align: center;
+            transition: all 0.2s ease;
+        }
+
+        .pdf-upload-section.drag-over {
+            background: #eaf2f8;
+            border-color: #1a3a52;
         }
 
         .pdf-upload-section p {
@@ -401,6 +407,26 @@
             color: #666;
             font-size: 14px;
             line-height: 1.2;
+        }
+
+        .load-meta {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .load-dates {
+            font-weight: 600;
+            color: #999;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+
+        .load-dates::before {
+            content: '📅';
+            margin-right: 4px;
+            font-size: 11px;
         }
 
         .load-route {
@@ -738,8 +764,18 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="pickupDate">Pickup Date</label>
+                    <input type="date" id="pickupDate">
+                </div>
+
+                <div class="form-group">
                     <label for="deliveryCity">Delivery City, State *</label>
                     <input type="text" id="deliveryCity" required placeholder="e.g., Chicago, IL">
+                </div>
+
+                <div class="form-group">
+                    <label for="deliveryDate">Delivery Date</label>
+                    <input type="date" id="deliveryDate">
                 </div>
 
                 <div class="form-group">
@@ -763,8 +799,8 @@
                 <button class="close-btn" onclick="closeModal('pdfModal')">&times;</button>
             </div>
             <form id="pdfForm" onsubmit="processPdf(event)">
-                <div class="pdf-upload-section">
-                    <p>Upload your Rate Con PDF</p>
+                <div class="pdf-upload-section" id="pdfDropZone" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleFileDrop(event)">
+                    <p>Drag &amp; drop your Rate Con PDF here, or click below</p>
                     <input type="file" id="pdfFile" accept=".pdf" required onchange="extractPdfData(event)">
                     <div class="extraction-status" id="extractionStatus"></div>
                 </div>
@@ -785,8 +821,18 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="pdfPickupDate">Pickup Date</label>
+                    <input type="date" id="pdfPickupDate">
+                </div>
+
+                <div class="form-group">
                     <label for="pdfDeliveryCity">Delivery City, State *</label>
                     <input type="text" id="pdfDeliveryCity" required placeholder="e.g., Chicago, IL">
+                </div>
+
+                <div class="form-group">
+                    <label for="pdfDeliveryDate">Delivery Date</label>
+                    <input type="date" id="pdfDeliveryDate">
                 </div>
 
                 <div class="form-group">
@@ -826,8 +872,18 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="editPickupDate">Pickup Date</label>
+                    <input type="date" id="editPickupDate">
+                </div>
+
+                <div class="form-group">
                     <label for="editDeliveryCity">Delivery City, State</label>
                     <input type="text" id="editDeliveryCity" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="editDeliveryDate">Delivery Date</label>
+                    <input type="date" id="editDeliveryDate">
                 </div>
 
                 <div class="form-group">
@@ -845,6 +901,16 @@
 
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // ── Shared storage setup ────────────────────────────────────────
+        // Loads are stored server-side via a Netlify Function (see
+        // netlify/functions/loads.js) backed by Netlify Blobs, so every
+        // device hitting this site sees the same list. This only works
+        // once the site is deployed on Netlify (or run locally with
+        // `netlify dev`) - opening the HTML file directly won't reach it.
+        const API_BASE = '/.netlify/functions/loads';
+        const POLL_INTERVAL_MS = 12000; // how often other devices' changes show up here
+        let pollTimer = null;
 
         const CORRECT_PASSWORD = 'TEST';
         const STAGES = ['dispatched', 'in-transit', 'delivered', 'pod-received'];
@@ -869,18 +935,69 @@
         let editingLoadId = null;
         let expandedLoadId = null;
 
-        function checkPassword() {
+        // ── API helpers ──────────────────────────────────────────────
+        async function apiFetch(url, options) {
+            const res = await fetch(url, options);
+            if (!res.ok) {
+                let message = `Request failed (${res.status})`;
+                try {
+                    const body = await res.json();
+                    if (body && body.error) message = body.error;
+                } catch (_) { /* ignore parse errors */ }
+                throw new Error(message);
+            }
+            if (res.status === 204) return null;
+            return res.json();
+        }
+
+        function apiListLoads() {
+            return apiFetch(API_BASE);
+        }
+
+        function apiCreateLoad(load) {
+            return apiFetch(API_BASE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(load)
+            });
+        }
+
+        function apiUpdateLoad(load) {
+            return apiFetch(`${API_BASE}?id=${encodeURIComponent(load.id)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(load)
+            });
+        }
+
+        function apiDeleteLoad(id) {
+            return apiFetch(`${API_BASE}?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+        }
+
+        function apiDeleteLoads(ids) {
+            return apiFetch(`${API_BASE}?ids=${ids.map(encodeURIComponent).join(',')}`, { method: 'DELETE' });
+        }
+
+        async function checkPassword() {
             const password = document.getElementById('passwordInput').value;
-            if (password === CORRECT_PASSWORD) {
-                document.getElementById('passwordScreen').style.display = 'none';
-                document.getElementById('appContainer').classList.add('active');
-                loadFromStorage();
-                renderLoads();
-            } else {
+            if (password !== CORRECT_PASSWORD) {
                 document.getElementById('passwordError').style.display = 'block';
                 document.getElementById('passwordInput').value = '';
                 document.getElementById('passwordInput').focus();
+                return;
             }
+
+            document.getElementById('passwordScreen').style.display = 'none';
+            document.getElementById('appContainer').classList.add('active');
+
+            document.getElementById('loadsContainer').innerHTML = `
+                <div class="empty-state">
+                    <h2>Loading loads…</h2>
+                </div>
+            `;
+            await loadFromServer();
+            renderLoads();
+            startPolling();
         }
 
         function generateId() {
@@ -897,20 +1014,34 @@
             return new Date(load.createdAt).getTime() > cutoff;
         }
 
-        function loadFromStorage() {
-            let stored;
+        async function loadFromServer() {
             try {
-                stored = JSON.parse(localStorage.getItem('loads') || '[]');
+                const data = await apiListLoads();
+                loads = (data || []).filter(isLoadFresh);
             } catch (err) {
-                console.error('Corrupted load data in storage, resetting.', err);
-                stored = [];
+                console.error('Failed to load loads from server:', err);
+                document.getElementById('loadsContainer').innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">⚠️</div>
+                        <h2>Couldn't reach the shared list</h2>
+                        <p>Make sure the site is deployed on Netlify with the loads function set up, then reload.</p>
+                    </div>
+                `;
+                loads = [];
             }
-            loads = stored.filter(isLoadFresh);
-            saveToStorage();
         }
 
-        function saveToStorage() {
-            localStorage.setItem('loads', JSON.stringify(loads));
+        function startPolling() {
+            if (pollTimer) return;
+            // Other devices' changes show up here on the next poll - not
+            // instant, but simple and reliable without any extra service.
+            pollTimer = setInterval(async () => {
+                // Don't yank the list out from under someone mid-edit.
+                const anyModalOpen = document.querySelector('.modal.active');
+                if (anyModalOpen) return;
+                await loadFromServer();
+                renderLoads();
+            }, POLL_INTERVAL_MS);
         }
 
         function openAddLoadModal() {
@@ -953,10 +1084,46 @@
             }
         });
 
+        function handleDragOver(event) {
+            event.preventDefault();
+            document.getElementById('pdfDropZone').classList.add('drag-over');
+        }
+
+        function handleDragLeave(event) {
+            event.preventDefault();
+            document.getElementById('pdfDropZone').classList.remove('drag-over');
+        }
+
+        function handleFileDrop(event) {
+            event.preventDefault();
+            document.getElementById('pdfDropZone').classList.remove('drag-over');
+
+            const file = event.dataTransfer.files && event.dataTransfer.files[0];
+            if (!file) return;
+
+            if (!file.name.toLowerCase().endsWith('.pdf')) {
+                const statusDiv = document.getElementById('extractionStatus');
+                statusDiv.textContent = '✗ That doesn\'t look like a PDF. Please drop a .pdf file.';
+                statusDiv.className = 'extraction-status error';
+                return;
+            }
+
+            // Assign the dropped file to the actual <input type="file">
+            // so the form's "required" validation still passes on submit.
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            document.getElementById('pdfFile').files = dataTransfer.files;
+
+            processPdfFile(file);
+        }
+
         async function extractPdfData(event) {
             const file = event.target.files[0];
             if (!file) return;
+            await processPdfFile(file);
+        }
 
+        async function processPdfFile(file) {
             const statusDiv = document.getElementById('extractionStatus');
             statusDiv.className = 'extraction-status';
             statusDiv.textContent = 'Reading PDF…';
@@ -1074,11 +1241,51 @@
                         }
                     }
 
+                    // Extract pickup and delivery dates the same way - search
+                    // near common date labels first.
+                    function findDate(searchText) {
+                        const m = searchText.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+                        if (!m) return null;
+                        let mm = parseInt(m[1], 10), dd = parseInt(m[2], 10), yyyy = parseInt(m[3], 10);
+                        if (yyyy < 100) yyyy += 2000;
+                        if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+                        return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+                    }
+
+                    function findLabeledDate(labelPatterns) {
+                        for (const pattern of labelPatterns) {
+                            const m = pattern.exec(text);
+                            if (m) {
+                                const start = m.index + m[0].length;
+                                const found = findDate(text.slice(start, start + WINDOW));
+                                if (found) return found;
+                            }
+                        }
+                        return null;
+                    }
+
+                    const pickupDateLabels = [
+                        /Pick\s*-?\s*Up\s*Date[:\s]*/i,
+                        /Ship\s*Date[:\s]*/i,
+                        /Origin\s*Date[:\s]*/i
+                    ];
+                    const deliveryDateLabels = [
+                        /Delivery\s*Date[:\s]*/i,
+                        /Drop\s*-?\s*Off\s*Date[:\s]*/i,
+                        /Del(?:iv)?\s*Date[:\s]*/i,
+                        /Destination\s*Date[:\s]*/i
+                    ];
+
+                    const pickupDate = findLabeledDate(pickupDateLabels) || '';
+                    const deliveryDate = findLabeledDate(deliveryDateLabels) || '';
+
                     // Fill in the fields
                     if (carrierName) document.getElementById('pdfCarrierName').value = carrierName;
                     if (rateConNumber) document.getElementById('pdfRateConNumber').value = rateConNumber;
                     if (pickupCity) document.getElementById('pdfPickupCity').value = pickupCity;
                     if (deliveryCity) document.getElementById('pdfDeliveryCity').value = deliveryCity;
+                    if (pickupDate) document.getElementById('pdfPickupDate').value = pickupDate;
+                    if (deliveryDate) document.getElementById('pdfDeliveryDate').value = deliveryDate;
 
                     // Show status
                     if (carrierName && rateConNumber && pickupCity && deliveryCity) {
@@ -1108,7 +1315,7 @@
             reader.readAsArrayBuffer(file);
         }
 
-        function addLoad(e) {
+        async function addLoad(e) {
             e.preventDefault();
 
             const load = {
@@ -1116,7 +1323,9 @@
                 carrierName: document.getElementById('carrierName').value.trim(),
                 rateConNumber: document.getElementById('rateConNumber').value.trim(),
                 pickupCity: document.getElementById('pickupCity').value.trim(),
+                pickupDate: document.getElementById('pickupDate').value,
                 deliveryCity: document.getElementById('deliveryCity').value.trim(),
+                deliveryDate: document.getElementById('deliveryDate').value,
                 loadNotes: document.getElementById('loadNotes').value.trim(),
                 status: 'dispatched',
                 createdAt: new Date().toISOString(),
@@ -1124,12 +1333,20 @@
             };
 
             loads.unshift(load);
-            saveToStorage();
             renderLoads();
             closeModal('addLoadModal');
+
+            try {
+                await apiCreateLoad(load);
+            } catch (err) {
+                console.error('Failed to save load:', err);
+                loads = loads.filter(l => l.id !== load.id);
+                renderLoads();
+                alert('Could not save the load - check your connection and try again.');
+            }
         }
 
-        function processPdf(e) {
+        async function processPdf(e) {
             e.preventDefault();
 
             const load = {
@@ -1137,7 +1354,9 @@
                 carrierName: document.getElementById('pdfCarrierName').value.trim(),
                 rateConNumber: document.getElementById('pdfRateConNumber').value.trim(),
                 pickupCity: document.getElementById('pdfPickupCity').value.trim(),
+                pickupDate: document.getElementById('pdfPickupDate').value,
                 deliveryCity: document.getElementById('pdfDeliveryCity').value.trim(),
+                deliveryDate: document.getElementById('pdfDeliveryDate').value,
                 loadNotes: document.getElementById('pdfLoadNotes').value.trim(),
                 status: 'dispatched',
                 createdAt: new Date().toISOString(),
@@ -1145,9 +1364,17 @@
             };
 
             loads.unshift(load);
-            saveToStorage();
             renderLoads();
             closeModal('pdfModal');
+
+            try {
+                await apiCreateLoad(load);
+            } catch (err) {
+                console.error('Failed to save load:', err);
+                loads = loads.filter(l => l.id !== load.id);
+                renderLoads();
+                alert('Could not save the load - check your connection and try again.');
+            }
         }
 
         function toggleCardExpand(loadId, e) {
@@ -1156,13 +1383,22 @@
             renderLoads();
         }
 
-        function updateLoadStatus(loadId, newStatus) {
+        async function updateLoadStatus(loadId, newStatus) {
             const load = loads.find(l => l.id === loadId);
-            if (load) {
-                load.status = newStatus;
-                load.updatedAt = new Date().toISOString();
-                saveToStorage();
+            if (!load) return;
+
+            const previousStatus = load.status;
+            load.status = newStatus;
+            load.updatedAt = new Date().toISOString();
+            renderLoads();
+
+            try {
+                await apiUpdateLoad(load);
+            } catch (err) {
+                console.error('Failed to update status:', err);
+                load.status = previousStatus;
                 renderLoads();
+                alert('Could not update the status - check your connection and try again.');
             }
         }
 
@@ -1193,40 +1429,69 @@
                 document.getElementById('editCarrierName').value = load.carrierName;
                 document.getElementById('editRateConNumber').value = load.rateConNumber;
                 document.getElementById('editPickupCity').value = load.pickupCity;
+                document.getElementById('editPickupDate').value = load.pickupDate || '';
                 document.getElementById('editDeliveryCity').value = load.deliveryCity;
+                document.getElementById('editDeliveryDate').value = load.deliveryDate || '';
                 document.getElementById('editLoadNotes').value = load.loadNotes || '';
                 document.getElementById('editLoadModal').classList.add('active');
             }
             closeDropdown(loadId);
         }
 
-        function updateLoad(e) {
+        async function updateLoad(e) {
             e.preventDefault();
             const load = loads.find(l => l.id === editingLoadId);
-            if (load) {
-                load.carrierName = document.getElementById('editCarrierName').value.trim();
-                load.rateConNumber = document.getElementById('editRateConNumber').value.trim();
-                load.pickupCity = document.getElementById('editPickupCity').value.trim();
-                load.deliveryCity = document.getElementById('editDeliveryCity').value.trim();
-                load.loadNotes = document.getElementById('editLoadNotes').value.trim();
-                load.updatedAt = new Date().toISOString();
-                saveToStorage();
-                renderLoads();
+            if (!load) {
+                closeModal('editLoadModal');
+                return;
             }
+
+            const previous = { ...load };
+            load.carrierName = document.getElementById('editCarrierName').value.trim();
+            load.rateConNumber = document.getElementById('editRateConNumber').value.trim();
+            load.pickupCity = document.getElementById('editPickupCity').value.trim();
+            load.pickupDate = document.getElementById('editPickupDate').value;
+            load.deliveryCity = document.getElementById('editDeliveryCity').value.trim();
+            load.deliveryDate = document.getElementById('editDeliveryDate').value;
+            load.loadNotes = document.getElementById('editLoadNotes').value.trim();
+            load.updatedAt = new Date().toISOString();
+            renderLoads();
             closeModal('editLoadModal');
-        }
 
-        function deleteLoad(loadId) {
-            if (confirm('Delete this load?')) {
-                loads = loads.filter(l => l.id !== loadId);
-                if (expandedLoadId === loadId) expandedLoadId = null;
-                saveToStorage();
+            try {
+                await apiUpdateLoad(load);
+            } catch (err) {
+                console.error('Failed to save changes:', err);
+                Object.assign(load, previous);
                 renderLoads();
+                alert('Could not save changes - check your connection and try again.');
             }
-            closeDropdown(loadId);
         }
 
-        function duplicateLoad(loadId) {
+        async function deleteLoad(loadId) {
+            if (!confirm('Delete this load?')) {
+                closeDropdown(loadId);
+                return;
+            }
+
+            const index = loads.findIndex(l => l.id === loadId);
+            const removed = index > -1 ? loads[index] : null;
+            loads = loads.filter(l => l.id !== loadId);
+            if (expandedLoadId === loadId) expandedLoadId = null;
+            renderLoads();
+            closeDropdown(loadId);
+
+            try {
+                await apiDeleteLoad(loadId);
+            } catch (err) {
+                console.error('Failed to delete load:', err);
+                if (removed) loads.splice(index, 0, removed);
+                renderLoads();
+                alert('Could not delete the load - check your connection and try again.');
+            }
+        }
+
+        async function duplicateLoad(loadId) {
             const index = loads.findIndex(l => l.id === loadId);
             if (index === -1) return;
 
@@ -1242,22 +1507,38 @@
             // Insert right after the original so duplicates for the same
             // lane/carrier stay grouped together in the list.
             loads.splice(index + 1, 0, copy);
-            saveToStorage();
             renderLoads();
             closeDropdown(loadId);
+
+            try {
+                await apiCreateLoad(copy);
+            } catch (err) {
+                console.error('Failed to duplicate load:', err);
+                loads = loads.filter(l => l.id !== copy.id);
+                renderLoads();
+                alert('Could not duplicate the load - check your connection and try again.');
+            }
         }
 
-        function clearOldLoads() {
-            const countBefore = loads.length;
-            loads = loads.filter(isLoadFresh);
-            const deleted = countBefore - loads.length;
-
-            if (deleted > 0) {
-                saveToStorage();
-                renderLoads();
-                alert(`Cleaned up ${deleted} old load(s)`);
-            } else {
+        async function clearOldLoads() {
+            const stale = loads.filter(l => !isLoadFresh(l));
+            if (stale.length === 0) {
                 alert('No loads older than 7 days');
+                return;
+            }
+
+            const staleIds = stale.map(l => l.id);
+            loads = loads.filter(isLoadFresh);
+            renderLoads();
+
+            try {
+                await apiDeleteLoads(staleIds);
+                alert(`Cleaned up ${staleIds.length} old load(s)`);
+            } catch (err) {
+                console.error('Failed to clean up old loads:', err);
+                alert('Could not remove old loads from the server - check your connection and try again.');
+                await loadFromServer();
+                renderLoads();
             }
         }
 
@@ -1302,7 +1583,12 @@
                     <div class="load-card-collapsed" onclick="toggleCardExpand('${load.id}', event)">
                         <div class="load-primary">
                             <div class="load-route">${escapeHtml(load.pickupCity)} → ${escapeHtml(load.deliveryCity)}</div>
-                            <div class="load-carrier">${escapeHtml(load.carrierName)}</div>
+                            <div class="load-meta">
+                                <span class="load-carrier">${escapeHtml(load.carrierName)}</span>
+                                ${(load.pickupDate || load.deliveryDate) ? `
+                                    <span class="load-dates">${formatDateShort(load.pickupDate) || '—'} → ${formatDateShort(load.deliveryDate) || '—'}</span>
+                                ` : ''}
+                            </div>
                         </div>
                         <div class="load-secondary">
                             <div class="load-rate-con">${escapeHtml(load.rateConNumber)}</div>
@@ -1318,6 +1604,12 @@
                         </div>
                     </div>
                     <div class="load-card-expanded ${expandedLoadId === load.id ? 'active' : ''}">
+                        ${(load.pickupDate || load.deliveryDate) ? `
+                            <div class="expanded-section">
+                                <div class="expanded-section-label">Dates</div>
+                                <div class="expanded-section-value">Pickup: ${formatDateLong(load.pickupDate) || '—'} &nbsp;·&nbsp; Delivery: ${formatDateLong(load.deliveryDate) || '—'}</div>
+                            </div>
+                        ` : ''}
                         ${load.loadNotes ? `
                             <div class="expanded-section">
                                 <div class="expanded-section-label">Notes</div>
@@ -1350,6 +1642,24 @@
                     </div>
                 </div>
             `).join('');
+        }
+
+        function parseIsoDateLocal(isoDate) {
+            if (!isoDate) return null;
+            const parts = isoDate.split('-').map(Number);
+            if (parts.length !== 3 || parts.some(isNaN)) return null;
+            const [y, m, d] = parts;
+            return new Date(y, m - 1, d);
+        }
+
+        function formatDateShort(isoDate) {
+            const dt = parseIsoDateLocal(isoDate);
+            return dt ? dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+        }
+
+        function formatDateLong(isoDate) {
+            const dt = parseIsoDateLocal(isoDate);
+            return dt ? dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : '';
         }
 
         function escapeHtml(text) {

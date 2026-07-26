@@ -367,7 +367,7 @@
             padding: 18px 22px;
             display: flex;
             align-items: center;
-            gap: 20px;
+            gap: 24px;
             cursor: pointer;
             flex-wrap: wrap;
         }
@@ -376,64 +376,46 @@
             background: #f9f9f9;
         }
 
-        .load-primary {
+        .load-field {
             display: flex;
             flex-direction: column;
-            gap: 4px;
-            flex: 1;
-            min-width: 260px;
+            gap: 3px;
+            min-width: 0;
         }
 
-        .load-secondary {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            flex-shrink: 0;
-        }
-
-        .load-rate-con {
+        .load-field-label {
+            font-size: 10px;
             font-weight: 700;
-            color: #333;
-            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #999;
+        }
+
+        .load-field-value {
+            font-size: 15px;
+            font-weight: 700;
+            color: #1a1a1a;
+            overflow-wrap: break-word;
+        }
+
+        .load-field.field-rate-con {
             background: #f0f0f0;
-            padding: 6px 12px;
+            padding: 8px 14px;
             border-radius: 6px;
-            white-space: nowrap;
             flex-shrink: 0;
         }
 
-        .load-carrier {
-            font-weight: 600;
-            color: #666;
+        .load-field.field-rate-con .load-field-value {
             font-size: 14px;
-            line-height: 1.2;
         }
 
-        .load-meta {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
+        .load-field.field-carrier {
+            flex: 0 1 160px;
         }
 
-        .load-dates {
-            font-weight: 600;
-            color: #999;
-            font-size: 13px;
-            white-space: nowrap;
-        }
-
-        .load-dates::before {
-            content: '📅';
-            margin-right: 4px;
-            font-size: 11px;
-        }
-
-        .load-route {
-            font-weight: 800;
-            color: #1a1a1a;
-            font-size: 19px;
-            line-height: 1.25;
+        .load-field.field-pickup,
+        .load-field.field-delivery {
+            flex: 1 1 190px;
         }
 
         .status-badge-compact {
@@ -644,9 +626,14 @@
                 width: 100%;
             }
 
-            .load-secondary {
-                width: 100%;
-                justify-content: space-between;
+            .load-card-collapsed {
+                gap: 12px 20px;
+            }
+
+            .load-field.field-carrier,
+            .load-field.field-pickup,
+            .load-field.field-delivery {
+                flex: 1 1 100%;
             }
         }
     </style>
@@ -937,15 +924,25 @@
 
         // ── API helpers ──────────────────────────────────────────────
         async function apiFetch(url, options) {
-            const res = await fetch(url, options);
+            let res;
+            try {
+                res = await fetch(url, options);
+            } catch (networkErr) {
+                console.error('Network error calling', url, networkErr);
+                throw new Error('Network error - could not reach the load-tracker function at all.');
+            }
+
             if (!res.ok) {
+                const rawText = await res.text().catch(() => '');
+                console.error(`Load-tracker function returned ${res.status} for ${url}:`, rawText);
                 let message = `Request failed (${res.status})`;
                 try {
-                    const body = await res.json();
+                    const body = JSON.parse(rawText);
                     if (body && body.error) message = body.error;
-                } catch (_) { /* ignore parse errors */ }
+                } catch (_) { /* response wasn't JSON - already logged above */ }
                 throw new Error(message);
             }
+
             if (res.status === 204) return null;
             return res.json();
         }
@@ -1581,25 +1578,28 @@
             container.innerHTML = loads.map(load => `
                 <div class="load-card ${load.status}">
                     <div class="load-card-collapsed" onclick="toggleCardExpand('${load.id}', event)">
-                        <div class="load-primary">
-                            <div class="load-route">${escapeHtml(load.pickupCity)} → ${escapeHtml(load.deliveryCity)}</div>
-                            <div class="load-meta">
-                                <span class="load-carrier">${escapeHtml(load.carrierName)}</span>
-                                ${(load.pickupDate || load.deliveryDate) ? `
-                                    <span class="load-dates">${formatDateShort(load.pickupDate) || '—'} → ${formatDateShort(load.deliveryDate) || '—'}</span>
-                                ` : ''}
-                            </div>
+                        <div class="load-field field-rate-con">
+                            <div class="load-field-value">${escapeHtml(load.rateConNumber)}</div>
                         </div>
-                        <div class="load-secondary">
-                            <div class="load-rate-con">${escapeHtml(load.rateConNumber)}</div>
-                            <span class="status-badge-compact ${load.status}">${STAGE_LABELS[load.status] || load.status}</span>
-                            <div class="load-card-menu">
-                                <button class="menu-btn" onclick="toggleDropdown('${load.id}', event)">⋮</button>
-                                <div class="dropdown-menu" data-menu="${load.id}">
-                                    <button onclick="openEditModal('${load.id}')">Edit</button>
-                                    <button class="delete" onclick="deleteLoad('${load.id}')">Delete</button>
-                                    <button onclick="duplicateLoad('${load.id}')">Duplicate</button>
-                                </div>
+                        <div class="load-field field-carrier">
+                            <div class="load-field-label">Carrier</div>
+                            <div class="load-field-value">${escapeHtml(load.carrierName)}</div>
+                        </div>
+                        <div class="load-field field-pickup">
+                            <div class="load-field-label">Pickup</div>
+                            <div class="load-field-value">${formatDateShort(load.pickupDate) ? formatDateShort(load.pickupDate) + ', ' : ''}${escapeHtml(load.pickupCity)}</div>
+                        </div>
+                        <div class="load-field field-delivery">
+                            <div class="load-field-label">Delivery</div>
+                            <div class="load-field-value">${formatDateShort(load.deliveryDate) ? formatDateShort(load.deliveryDate) + ', ' : ''}${escapeHtml(load.deliveryCity)}</div>
+                        </div>
+                        <span class="status-badge-compact ${load.status}">${STAGE_LABELS[load.status] || load.status}</span>
+                        <div class="load-card-menu">
+                            <button class="menu-btn" onclick="toggleDropdown('${load.id}', event)">⋮</button>
+                            <div class="dropdown-menu" data-menu="${load.id}">
+                                <button onclick="openEditModal('${load.id}')">Edit</button>
+                                <button class="delete" onclick="deleteLoad('${load.id}')">Delete</button>
+                                <button onclick="duplicateLoad('${load.id}')">Duplicate</button>
                             </div>
                         </div>
                     </div>

@@ -6,7 +6,17 @@
 // No setup needed beyond deploying on Netlify: Netlify automatically
 // provisions the Blobs store for the site, no API keys required.
 
-const { getStore } = require('@netlify/blobs');
+let getStore;
+let blobsLoadError = null;
+try {
+    ({ getStore } = require('@netlify/blobs'));
+} catch (err) {
+    // If this fails, the @netlify/blobs dependency likely wasn't bundled
+    // (missing/misplaced package.json, or the build didn't run npm install).
+    // We catch it here so the function can still respond with a useful
+    // error instead of dying with an opaque 502 before the handler runs.
+    blobsLoadError = err;
+}
 
 const STORE_NAME = 'load-tracker';
 const KEY = 'loads';
@@ -30,9 +40,17 @@ exports.handler = async (event) => {
         return { statusCode: 204, headers: CORS_HEADERS, body: '' };
     }
 
-    const store = getStore(STORE_NAME);
+    if (blobsLoadError) {
+        console.error('@netlify/blobs failed to load:', blobsLoadError);
+        return json(500, {
+            error: `@netlify/blobs did not load: ${blobsLoadError.message}. Check that package.json is at the repo root and the Netlify build ran "npm install".`
+        });
+    }
 
+    let store;
     try {
+        store = getStore(STORE_NAME);
+
         if (event.httpMethod === 'GET') {
             const loads = (await store.get(KEY, { type: 'json' })) || [];
             return json(200, loads);
@@ -81,7 +99,10 @@ exports.handler = async (event) => {
 
         return json(405, { error: 'Method not allowed' });
     } catch (err) {
+        // Log full detail server-side (visible in Netlify's function log),
+        // and also return enough detail in the response body that it shows
+        // up in the browser console instead of a bare, unhelpful 502/500.
         console.error('loads function error:', err);
-        return json(500, { error: 'Server error' });
+        return json(500, { error: `Server error: ${err.message}`, name: err.name });
     }
 };

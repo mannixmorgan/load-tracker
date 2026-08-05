@@ -671,13 +671,31 @@
                     <circle cx="66" cy="42" r="2"/>
                     <circle cx="84" cy="42" r="2"/>
                 </g>
-            </svg> Load Tracker</h1>
-            <p>Enter password to access</p>
-            <input type="password" id="passwordInput" class="password-input" placeholder="Enter password" autocomplete="off" onkeypress="if(event.key==='Enter') checkPassword()">
-            <button class="password-btn" onclick="checkPassword()">Access</button>
-            <div class="password-error" id="passwordError">Incorrect password. Try again.</div>
-        </div>
-    </div>
+            <p>Sign in to access</p>
+
+<input
+    type="email"
+    id="emailInput"
+    class="password-input"
+    placeholder="Email address"
+    autocomplete="email"
+    onkeypress="if(event.key==='Enter') document.getElementById('passwordInput').focus()"
+>
+
+<input
+    type="password"
+    id="passwordInput"
+    class="password-input"
+    placeholder="Password"
+    autocomplete="current-password"
+    onkeypress="if(event.key==='Enter') checkPassword()"
+>
+
+<button class="password-btn" onclick="checkPassword()">Sign In</button>
+
+<div class="password-error" id="passwordError">
+    Incorrect email or password. Try again.
+</div>
 
     <!-- Main App -->
     <div class="app-container" id="appContainer">

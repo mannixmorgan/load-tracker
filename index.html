@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Load Tracker</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore-compat.js"></script>
     <style>
         * {
             margin: 0;
@@ -890,14 +892,38 @@
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
         // ── Shared storage setup ────────────────────────────────────────
-        // Loads are stored server-side via a Netlify Function (see
-        // netlify/functions/loads.js) backed by Netlify Blobs, so every
-        // device hitting this site sees the same list. This only works
-        // once the site is deployed on Netlify (or run locally with
-        // `netlify dev`) - opening the HTML file directly won't reach it.
-        const API_BASE = '/.netlify/functions/loads';
-        const POLL_INTERVAL_MS = 12000; // how often other devices' changes show up here
-        let pollTimer = null;
+        // Loads are stored in Firebase Firestore, so every device reading
+        // this page sees the same shared list, kept in sync in real time.
+        // No server function, no per-host setup - this works on Vercel,
+        // Netlify, GitHub Pages, or anywhere else you host the HTML.
+        //
+        // Setup (one time, free, no credit card):
+        //   1. Go to https://console.firebase.google.com -> Add project
+        //   2. Build -> Firestore Database -> Create database -> Start in
+        //      test mode (see the security note further down)
+        //   3. Project settings (gear icon) -> General -> scroll to
+        //      "Your apps" -> Add app -> Web (</>) -> register it
+        //   4. Copy the firebaseConfig object it gives you and paste the
+        //      values in below.
+        const firebaseConfig = {
+            apiKey: 'AIzaSyC4IgTneywE92DeE6GzJBhs8RQbILl5HHI',
+            authDomain: 'smes-load-track.firebaseapp.com',
+            projectId: 'smes-load-track',
+            storageBucket: 'smes-load-track.firebasestorage.app',
+            messagingSenderId: '745344305250',
+            appId: '1:745344305250:web:685e29ba8396d004daa93b'
+        };
+
+        function isFirebaseConfigured() {
+            return firebaseConfig.apiKey && firebaseConfig.apiKey !== 'AIzaSyC4IgTneywE92DeE6GzJBhs8RQbILl5HHI';
+        }
+
+        let db = null;
+        let loadsUnsubscribe = null;
+        if (isFirebaseConfigured()) {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore();
+        }
 
         const CORRECT_PASSWORD = 'TEST';
         const STAGES = ['dispatched', 'in-transit', 'delivered', 'pod-received'];
@@ -922,57 +948,46 @@
         let editingLoadId = null;
         let expandedLoadId = null;
 
-        // ── API helpers ──────────────────────────────────────────────
-        async function apiFetch(url, options) {
-            let res;
-            try {
-                res = await fetch(url, options);
-            } catch (networkErr) {
-                console.error('Network error calling', url, networkErr);
-                throw new Error('Network error - could not reach the load-tracker function at all.');
-            }
-
-            if (!res.ok) {
-                const rawText = await res.text().catch(() => '');
-                console.error(`Load-tracker function returned ${res.status} for ${url}:`, rawText);
-                let message = `Request failed (${res.status})`;
-                try {
-                    const body = JSON.parse(rawText);
-                    if (body && body.error) message = body.error;
-                } catch (_) { /* response wasn't JSON - already logged above */ }
-                throw new Error(message);
-            }
-
-            if (res.status === 204) return null;
-            return res.json();
-        }
-
-        function apiListLoads() {
-            return apiFetch(API_BASE);
-        }
-
+        // ── Firestore helpers ────────────────────────────────────────
+        // These keep the same names as before (apiCreateLoad etc.) so the
+        // rest of the app - addLoad, updateLoad, deleteLoad, and so on -
+        // didn't need to change, just what's underneath them.
         function apiCreateLoad(load) {
-            return apiFetch(API_BASE, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(load)
-            });
+            return db.collection('loads').doc(load.id).set(load);
         }
 
         function apiUpdateLoad(load) {
-            return apiFetch(`${API_BASE}?id=${encodeURIComponent(load.id)}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(load)
-            });
+            return db.collection('loads').doc(load.id).set(load, { merge: true });
         }
 
         function apiDeleteLoad(id) {
-            return apiFetch(`${API_BASE}?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+            return db.collection('loads').doc(id).delete();
         }
 
         function apiDeleteLoads(ids) {
-            return apiFetch(`${API_BASE}?ids=${ids.map(encodeURIComponent).join(',')}`, { method: 'DELETE' });
+            return Promise.all(ids.map((id) => db.collection('loads').doc(id).delete()));
+        }
+
+        function subscribeToLoads() {
+            if (loadsUnsubscribe) return;
+            loadsUnsubscribe = db.collection('loads').onSnapshot(
+                (snapshot) => {
+                    loads = snapshot.docs.map((doc) => doc.data()).filter(isLoadFresh);
+                    // Sort newest first, same ordering as before.
+                    loads.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                    renderLoads();
+                },
+                (err) => {
+                    console.error('Firestore listener error:', err);
+                    document.getElementById('loadsContainer').innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">⚠️</div>
+                            <h2>Couldn't reach the shared list</h2>
+                            <p>${escapeHtml(err.message)}</p>
+                        </div>
+                    `;
+                }
+            );
         }
 
         async function checkPassword() {
@@ -987,14 +1002,23 @@
             document.getElementById('passwordScreen').style.display = 'none';
             document.getElementById('appContainer').classList.add('active');
 
+            if (!isFirebaseConfigured()) {
+                document.getElementById('loadsContainer').innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">⚙️</div>
+                        <h2>Setup needed</h2>
+                        <p>Paste your Firebase config into the script to sync loads across devices.</p>
+                    </div>
+                `;
+                return;
+            }
+
             document.getElementById('loadsContainer').innerHTML = `
                 <div class="empty-state">
                     <h2>Loading loads…</h2>
                 </div>
             `;
-            await loadFromServer();
-            renderLoads();
-            startPolling();
+            subscribeToLoads();
         }
 
         function generateId() {
@@ -1009,36 +1033,6 @@
         function isLoadFresh(load) {
             const cutoff = Date.now() - MAX_LOAD_AGE_DAYS * 24 * 60 * 60 * 1000;
             return new Date(load.createdAt).getTime() > cutoff;
-        }
-
-        async function loadFromServer() {
-            try {
-                const data = await apiListLoads();
-                loads = (data || []).filter(isLoadFresh);
-            } catch (err) {
-                console.error('Failed to load loads from server:', err);
-                document.getElementById('loadsContainer').innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">⚠️</div>
-                        <h2>Couldn't reach the shared list</h2>
-                        <p>Make sure the site is deployed on Netlify with the loads function set up, then reload.</p>
-                    </div>
-                `;
-                loads = [];
-            }
-        }
-
-        function startPolling() {
-            if (pollTimer) return;
-            // Other devices' changes show up here on the next poll - not
-            // instant, but simple and reliable without any extra service.
-            pollTimer = setInterval(async () => {
-                // Don't yank the list out from under someone mid-edit.
-                const anyModalOpen = document.querySelector('.modal.active');
-                if (anyModalOpen) return;
-                await loadFromServer();
-                renderLoads();
-            }, POLL_INTERVAL_MS);
         }
 
         function openAddLoadModal() {
@@ -1534,8 +1528,7 @@
             } catch (err) {
                 console.error('Failed to clean up old loads:', err);
                 alert('Could not remove old loads from the server - check your connection and try again.');
-                await loadFromServer();
-                renderLoads();
+                // The Firestore listener will reconcile the list automatically.
             }
         }
 

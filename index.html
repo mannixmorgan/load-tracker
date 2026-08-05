@@ -1009,36 +1009,49 @@
             );
         }
 
-        async function checkPassword() {
-            const password = document.getElementById('passwordInput').value;
-            if (password !== CORRECT_PASSWORD) {
-                document.getElementById('passwordError').style.display = 'block';
-                document.getElementById('passwordInput').value = '';
-                document.getElementById('passwordInput').focus();
-                return;
-            }
+       async function checkPassword() {
+    const email = document.getElementById('emailInput').value.trim();
+    const password = document.getElementById('passwordInput').value;
+    const errorElement = document.getElementById('passwordError');
 
-            document.getElementById('passwordScreen').style.display = 'none';
-            document.getElementById('appContainer').classList.add('active');
+    errorElement.style.display = 'none';
 
-            if (!isFirebaseConfigured()) {
-                document.getElementById('loadsContainer').innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">⚙️</div>
-                        <h2>Setup needed</h2>
-                        <p>Paste your Firebase config into the script to sync loads across devices.</p>
-                    </div>
-                `;
-                return;
-            }
+    if (!email || !password) {
+        errorElement.textContent = 'Please enter your email and password.';
+        errorElement.style.display = 'block';
+        return;
+    }
 
-            document.getElementById('loadsContainer').innerHTML = `
-                <div class="empty-state">
-                    <h2>Loading loads…</h2>
-                </div>
-            `;
-            subscribeToLoads();
-        }
+    if (!isFirebaseConfigured()) {
+        errorElement.textContent = 'Firebase is not configured.';
+        errorElement.style.display = 'block';
+        return;
+    }
+
+    try {
+        await firebase.auth().signInWithEmailAndPassword(email, password);
+
+        document.getElementById('passwordScreen').style.display = 'none';
+        document.getElementById('appContainer').classList.add('active');
+
+        document.getElementById('loadsContainer').innerHTML = `
+            <div class="empty-state">
+                <h2>Loading loads…</h2>
+            </div>
+        `;
+
+        subscribeToLoads();
+
+    } catch (error) {
+        console.error('Firebase login error:', error);
+
+        errorElement.textContent = 'Incorrect email or password. Try again.';
+        errorElement.style.display = 'block';
+
+        document.getElementById('passwordInput').value = '';
+        document.getElementById('passwordInput').focus();
+    }
+}
 
         function generateId() {
             if (window.crypto && crypto.randomUUID) {

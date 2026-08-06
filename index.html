@@ -449,7 +449,8 @@
             padding: 18px 22px;
             display: flex;
             align-items: center;
-            gap: 24px;
+            justify-content: space-between;
+            gap: 20px;
             cursor: pointer;
             flex-wrap: wrap;
         }
@@ -461,8 +462,10 @@
         .load-field {
             display: flex;
             flex-direction: column;
+            align-items: center;
             gap: 3px;
             min-width: 0;
+            text-align: center;
         }
 
         .load-field-label {
@@ -478,6 +481,7 @@
             font-weight: 700;
             color: #1a1a1a;
             overflow-wrap: break-word;
+            text-align: center;
         }
 
         .load-field.field-rate-con {
@@ -499,6 +503,7 @@
             font-size: 12px;
             font-weight: 600;
             color: #999;
+            text-align: center;
         }
 
         .load-field-sub {
@@ -506,6 +511,7 @@
             font-weight: 600;
             color: #999;
             margin-top: 1px;
+            text-align: center;
         }
 
         .load-field.field-pickup,
@@ -1131,6 +1137,10 @@
         };
         const MAX_LOAD_AGE_DAYS = 7;
         const ACTIVE_STAGES = ['dispatched', 'loading', 'in-transit', 'unloading'];
+        // Delivered loads stay visible on the main tab (not just the
+        // Delivered tab) - only POD Received is the true "done, archived"
+        // state that leaves the main view.
+        const MAIN_TAB_STAGES = ACTIVE_STAGES.concat(['delivered']);
 
         // Valid US state abbreviations
         const VALID_STATES = [
@@ -1381,6 +1391,40 @@
 
                     const WINDOW = 150; // chars to search after a label
 
+                    // Strategy 1: this specific template lists the carrier as
+                    // "COMPANY NAME * Contact: NAME Phone: NUMBER" with no
+                    // "Carrier:" label at all. We anchor on "Contact:" and
+                    // look BACKWARD a short distance for the company name,
+                    // then forward for the phone - anchoring on a fixed
+                    // point (rather than searching the whole document) is
+                    // what keeps this from ever grabbing the broker's own
+                    // "Bill To" phone/email, which appear earlier in the doc.
+                    const contactMatch = /Contact:/i.exec(text);
+                    if (contactMatch) {
+                        let before = text.slice(Math.max(0, contactMatch.index - 100), contactMatch.index);
+
+                        // Cut off anything through a trailing email/domain
+                        // fragment (".COM", ".NET", etc.) so a Bill-To email
+                        // sitting just before the carrier block can never
+                        // bleed into the captured name.
+                        const domainMatches = [...before.matchAll(/\.(?:COM|NET|ORG|CO|BIZ)\b/gi)];
+                        if (domainMatches.length) {
+                            const last = domainMatches[domainMatches.length - 1];
+                            before = before.slice(last.index + last[0].length);
+                        }
+
+                        const nameMatch = before.match(/((?:[A-Za-z0-9&,.'-]+\s+){0,4}[A-Za-z0-9&,.'-]+)\s*\*?\s*$/);
+                        if (nameMatch) {
+                            carrierName = nameMatch[1].trim();
+                        }
+
+                        const afterContact = text.slice(contactMatch.index + contactMatch[0].length, contactMatch.index + contactMatch[0].length + 60);
+                        const phoneNear = afterContact.match(/\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
+                        if (phoneNear) {
+                            carrierPhone = phoneNear[0].trim();
+                        }
+                    }
+
                     // Carrier: search near an explicit "Carrier" label first -
                     // far more reliable than pattern-matching, since it won't
                     // accidentally grab the broker's own name if that also
@@ -1390,14 +1434,16 @@
                         /Carrier[:\s]*/i,
                         /SCAC[:\s]*/i
                     ];
-                    for (const pattern of carrierLabels) {
-                        const m = pattern.exec(text);
-                        if (m) {
-                            const chunk = text.slice(m.index + m[0].length, m.index + m[0].length + 80);
-                            const nameMatch = chunk.match(/^([A-Za-z0-9][A-Za-z0-9\s&,.'-]{2,60}?)(?=\s{2,}|\s+(?:MC#|DOT#|Phone|Tel|Address|\d{3}[-.]?\d{3}[-.]?\d{4})|$)/);
-                            if (nameMatch) {
-                                carrierName = nameMatch[1].trim();
-                                break;
+                    if (!carrierName) {
+                        for (const pattern of carrierLabels) {
+                            const m = pattern.exec(text);
+                            if (m) {
+                                const chunk = text.slice(m.index + m[0].length, m.index + m[0].length + 80);
+                                const nameMatch = chunk.match(/^([A-Za-z0-9][A-Za-z0-9\s&,.'-]{2,60}?)(?=\s{2,}|\s+(?:MC#|DOT#|Phone|Tel|Address|\d{3}[-.]?\d{3}[-.]?\d{4})|$)/);
+                                if (nameMatch) {
+                                    carrierName = nameMatch[1].trim();
+                                    break;
+                                }
                             }
                         }
                     }
@@ -1409,8 +1455,8 @@
                         }
                     }
 
-                    // Carrier phone - search near carrier/dispatch labels first,
-                    // then fall back to the first phone-shaped number anywhere.
+                    // Carrier phone - only fall back to generic label search
+                    // if the anchored carrier-block match above didn't find one.
                     function findPhone(searchText) {
                         const m = searchText.match(/\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
                         return m ? m[0].trim() : null;
@@ -1418,16 +1464,17 @@
                     const phoneLabels = [
                         /Carrier\s*Phone[:\s]*/i,
                         /Dispatch\s*Phone[:\s]*/i,
-                        /Phone[:\s]*/i,
                         /Tel(?:ephone)?[:\s]*/i
                     ];
-                    for (const pattern of phoneLabels) {
-                        const m = pattern.exec(text);
-                        if (m) {
-                            const found = findPhone(text.slice(m.index + m[0].length, m.index + m[0].length + 40));
-                            if (found) {
-                                carrierPhone = found;
-                                break;
+                    if (!carrierPhone) {
+                        for (const pattern of phoneLabels) {
+                            const m = pattern.exec(text);
+                            if (m) {
+                                const found = findPhone(text.slice(m.index + m[0].length, m.index + m[0].length + 40));
+                                if (found) {
+                                    carrierPhone = found;
+                                    break;
+                                }
                             }
                         }
                     }
@@ -1486,7 +1533,7 @@
                         /Ship\s*From[:\s]*/i
                     ];
                     const deliveryLabels = [
-                        /Delivery\s*(?:Location|Address)?[:\s]*/i,
+                        /Deliver(?:y)?\s*(?:Location|Address)?[:\s]*/i,
                         /Drop\s*-?\s*Off[:\s]*/i,
                         /Destination[:\s]*/i,
                         /Consignee[:\s]*/i,
@@ -1516,13 +1563,32 @@
                     }
 
                     // Pickup/delivery dates - search near common date labels first.
+                    const MONTH_NAMES = {
+                        jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+                        jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12
+                    };
                     function findDate(searchText) {
-                        const m = searchText.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-                        if (!m) return null;
-                        let mm = parseInt(m[1], 10), dd = parseInt(m[2], 10), yyyy = parseInt(m[3], 10);
-                        if (yyyy < 100) yyyy += 2000;
-                        if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
-                        return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+                        // Numeric form: 6/9/2026 or 06-09-2026
+                        const numeric = searchText.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+                        if (numeric) {
+                            let mm = parseInt(numeric[1], 10), dd = parseInt(numeric[2], 10), yyyy = parseInt(numeric[3], 10);
+                            if (yyyy < 100) yyyy += 2000;
+                            if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+                                return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+                            }
+                        }
+                        // Month-name form: "June 09, 2026" or "Jun 9 2026"
+                        const named = searchText.match(/([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/);
+                        if (named) {
+                            const monthKey = named[1].slice(0, 3).toLowerCase();
+                            const mm = MONTH_NAMES[monthKey];
+                            const dd = parseInt(named[2], 10);
+                            const yyyy = parseInt(named[3], 10);
+                            if (mm && dd >= 1 && dd <= 31) {
+                                return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+                            }
+                        }
+                        return null;
                     }
 
                     function findLabeledDate(labelPatterns) {
@@ -1554,12 +1620,12 @@
 
                     // Pickup/delivery times, e.g. "2:30 PM".
                     function findTime(searchText) {
-                        const m = searchText.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/);
+                        const m = searchText.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM|am|pm)/);
                         if (!m) return null;
                         let hh = parseInt(m[1], 10);
-                        const mm = parseInt(m[2], 10);
+                        const mm = m[2] ? parseInt(m[2], 10) : 0;
                         const ampm = (m[3] || '').toUpperCase();
-                        if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+                        if (hh < 1 || hh > 12 || mm < 0 || mm > 59) return null;
                         if (ampm === 'PM' && hh < 12) hh += 12;
                         if (ampm === 'AM' && hh === 12) hh = 0;
                         return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
@@ -1577,8 +1643,29 @@
                         return null;
                     }
 
-                    const pickupTime = findLabeledTime(pickupDateLabels.concat([/Pick\s*-?\s*Up\s*Time[:\s]*/i])) || '';
-                    const deliveryTime = findLabeledTime(deliveryDateLabels.concat([/Delivery\s*Time[:\s]*/i])) || '';
+                    let pickupTime = findLabeledTime(pickupDateLabels.concat([/Pick\s*-?\s*Up\s*Time[:\s]*/i])) || '';
+                    let deliveryTime = findLabeledTime(deliveryDateLabels.concat([/Delivery\s*Time[:\s]*/i])) || '';
+
+                    // Fallback: a standalone appointment-time note like
+                    // "DELIVER 8AM" (or "8AM DELIVER") that sits apart from
+                    // the structured pickup/delivery block - only picked up
+                    // if a real time is actually present, per the template.
+                    if (!deliveryTime) {
+                        const afterMatch = text.match(/DELIVER(?:Y)?\s+(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/i);
+                        const beforeMatch = text.match(/(\d{1,2}(?::\d{2})?\s*(?:AM|PM))\s+DELIVER(?:Y)?\b/i);
+                        const noteMatch = afterMatch || beforeMatch;
+                        if (noteMatch) {
+                            deliveryTime = findTime(noteMatch[1]) || '';
+                        }
+                    }
+                    if (!pickupTime) {
+                        const afterMatch = text.match(/PICK\s*-?\s*UP\s+(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/i);
+                        const beforeMatch = text.match(/(\d{1,2}(?::\d{2})?\s*(?:AM|PM))\s+PICK\s*-?\s*UP\b/i);
+                        const noteMatch = afterMatch || beforeMatch;
+                        if (noteMatch) {
+                            pickupTime = findTime(noteMatch[1]) || '';
+                        }
+                    }
 
                     // Fill in the fields
                     if (carrierName) document.getElementById('pdfCarrierName').value = carrierName;
@@ -1878,7 +1965,7 @@
         function renderLoads() {
             const container = document.getElementById('loadsContainer');
 
-            const activeCount = loads.filter(l => ACTIVE_STAGES.includes(l.status)).length;
+            const activeCount = loads.filter(l => MAIN_TAB_STAGES.includes(l.status)).length;
             const deliveredCount = loads.filter(l => l.status === 'delivered').length;
             const podReceivedCount = loads.filter(l => l.status === 'pod-received').length;
             document.getElementById('tabCountActive').textContent = activeCount ? `(${activeCount})` : '';
@@ -1886,7 +1973,7 @@
             document.getElementById('tabCountPodReceived').textContent = podReceivedCount ? `(${podReceivedCount})` : '';
 
             const visibleLoads = loads.filter((load) => {
-                if (currentTab === 'active') return ACTIVE_STAGES.includes(load.status);
+                if (currentTab === 'active') return MAIN_TAB_STAGES.includes(load.status);
                 return load.status === currentTab;
             });
 
@@ -1910,6 +1997,14 @@
             container.innerHTML = visibleLoads.map(load => `
                 <div class="load-card ${load.status}">
                     <div class="load-card-collapsed" onclick="toggleCardExpand('${load.id}', event)">
+                        <div class="load-card-menu">
+                            <button class="menu-btn" onclick="toggleDropdown('${load.id}', event)">⋮</button>
+                            <div class="dropdown-menu" data-menu="${load.id}">
+                                <button onclick="openEditModal('${load.id}')">Edit</button>
+                                <button onclick="duplicateLoad('${load.id}')">Duplicate</button>
+                                <button class="delete" onclick="deleteLoad('${load.id}')">Delete</button>
+                            </div>
+                        </div>
                         <div class="load-field field-rate-con">
                             <div class="load-field-value">${escapeHtml(load.rateConNumber)}</div>
                         </div>
@@ -1921,12 +2016,12 @@
                         <div class="load-field field-pickup">
                             <div class="load-field-label">Pickup</div>
                             <div class="load-field-value">${escapeHtml(load.pickupCity)}</div>
-                            ${(load.pickupDate || load.pickupTime) ? `<div class="load-field-sub">${formatDateShort(load.pickupDate)}${load.pickupTime ? ' · ' + formatTime(load.pickupTime) : ''}</div>` : ''}
+                            ${(load.pickupDate || load.pickupTime) ? `<div class="load-field-sub">${formatDateWithWeekday(load.pickupDate)}${load.pickupTime ? ' · ' + formatTime(load.pickupTime) : ''}</div>` : ''}
                         </div>
                         <div class="load-field field-delivery">
                             <div class="load-field-label">Delivery</div>
                             <div class="load-field-value">${escapeHtml(load.deliveryCity)}</div>
-                            ${(load.deliveryDate || load.deliveryTime) ? `<div class="load-field-sub">${formatDateShort(load.deliveryDate)}${load.deliveryTime ? ' · ' + formatTime(load.deliveryTime) : ''}</div>` : ''}
+                            ${(load.deliveryDate || load.deliveryTime) ? `<div class="load-field-sub">${formatDateWithWeekday(load.deliveryDate)}${load.deliveryTime ? ' · ' + formatTime(load.deliveryTime) : ''}</div>` : ''}
                         </div>
                         <span class="status-badge-compact ${load.status}">${STAGE_LABELS[load.status] || load.status}</span>
                         <div class="load-stage-nav">
@@ -1942,14 +2037,6 @@
                                 title="Move forward a stage"
                                 ${STAGES.indexOf(load.status) === STAGES.length - 1 ? 'disabled' : ''}
                             >→</button>
-                        </div>
-                        <div class="load-card-menu">
-                            <button class="menu-btn" onclick="toggleDropdown('${load.id}', event)">⋮</button>
-                            <div class="dropdown-menu" data-menu="${load.id}">
-                                <button onclick="openEditModal('${load.id}')">Edit</button>
-                                <button onclick="duplicateLoad('${load.id}')">Duplicate</button>
-                                <button class="delete" onclick="deleteLoad('${load.id}')">Delete</button>
-                            </div>
                         </div>
                     </div>
                     <div class="load-card-expanded ${expandedLoadId === load.id ? 'active' : ''}">
@@ -1996,6 +2083,11 @@
         function formatDateShort(isoDate) {
             const dt = parseIsoDateLocal(isoDate);
             return dt ? dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+        }
+
+        function formatDateWithWeekday(isoDate) {
+            const dt = parseIsoDateLocal(isoDate);
+            return dt ? dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
         }
 
         function formatDateLong(isoDate) {

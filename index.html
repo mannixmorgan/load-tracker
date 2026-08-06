@@ -14,7 +14,7 @@
             padding: 0;
             box-sizing: border-box;
         }
-  
+
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #1a3a52 0%, #0f2438 100%);
@@ -101,6 +101,16 @@
             display: block;
         }
 
+        .auth-loading-screen {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            color: white;
+            font-weight: 600;
+            font-size: 16px;
+        }
+
         .container {
             max-width: 960px;
             margin: 0 auto;
@@ -137,6 +147,29 @@
             display: flex;
             gap: 10px;
             flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .signed-in-as {
+            font-size: 12px;
+            color: #999;
+            font-weight: 600;
+            margin-right: 4px;
+        }
+
+        .signout-link {
+            background: none;
+            border: none;
+            color: #999;
+            font-size: 12px;
+            font-weight: 700;
+            text-decoration: underline;
+            cursor: pointer;
+            padding: 4px;
+        }
+
+        .signout-link:hover {
+            color: #333;
         }
 
         button {
@@ -248,6 +281,10 @@
         }
 
         input[type="text"],
+        input[type="email"],
+        input[type="tel"],
+        input[type="date"],
+        input[type="time"],
         input[type="number"],
         input[type="file"],
         textarea {
@@ -261,6 +298,10 @@
         }
 
         input[type="text"]:focus,
+        input[type="email"]:focus,
+        input[type="tel"]:focus,
+        input[type="date"]:focus,
+        input[type="time"]:focus,
         input[type="number"]:focus,
         textarea:focus {
             outline: none;
@@ -332,6 +373,36 @@
             display: block;
         }
 
+        .tab-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .tab-btn {
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 14px;
+        }
+
+        .tab-btn:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        .tab-btn.active {
+            background: white;
+            color: #1a3a52;
+        }
+
+        .tab-count {
+            opacity: 0.7;
+            font-weight: 600;
+        }
+
         .loads-container {
             display: flex;
             flex-direction: column;
@@ -354,8 +425,16 @@
             border-left-color: #FF8C00;
         }
 
+        .load-card.loading {
+            border-left-color: #FFB300;
+        }
+
         .load-card.in-transit {
             border-left-color: #FFD700;
+        }
+
+        .load-card.unloading {
+            border-left-color: #64B5F6;
         }
 
         .load-card.delivered {
@@ -413,7 +492,13 @@
         }
 
         .load-field.field-carrier {
-            flex: 0 1 160px;
+            flex: 0 1 180px;
+        }
+
+        .load-carrier-phone {
+            font-size: 12px;
+            font-weight: 600;
+            color: #999;
         }
 
         .load-field.field-pickup,
@@ -436,9 +521,19 @@
             color: white;
         }
 
+        .status-badge-compact.loading {
+            background: #FFB300;
+            color: white;
+        }
+
         .status-badge-compact.in-transit {
             background: #FFD700;
             color: #333;
+        }
+
+        .status-badge-compact.unloading {
+            background: #64B5F6;
+            color: white;
         }
 
         .status-badge-compact.delivered {
@@ -449,6 +544,33 @@
         .status-badge-compact.pod-received {
             background: #4caf50;
             color: white;
+        }
+
+        .load-stage-nav {
+            display: flex;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        .stage-nav-btn {
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            border-radius: 6px;
+            background: #f0f0f0;
+            color: #333;
+            font-size: 16px;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .stage-nav-btn:hover:not(:disabled) {
+            background: #e0e0e0;
+        }
+
+        .stage-nav-btn:disabled {
+            opacity: 0.3;
+            cursor: default;
         }
 
         .load-card-menu {
@@ -579,13 +701,6 @@
             border-color: #1a3a52;
         }
 
-        .load-actions {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-top: 12px;
-        }
-
         .empty-state {
             text-align: center;
             padding: 60px 20px;
@@ -642,64 +757,68 @@
     </style>
 </head>
 <body>
-    <!-- Password Screen -->
-<div class="password-screen" id="passwordScreen">
-    <div class="password-container">
-        <h1><svg class="truck-icon" viewBox="0 0 100 54" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <rect x="24" y="34" width="68" height="6" rx="1" fill="#1a3a52"/>
-            <rect x="20" y="36" width="6" height="4" fill="#333"/>
-            <rect x="2" y="20" width="8" height="14" rx="1" fill="#1a3a52"/>
-            <rect x="8" y="14" width="18" height="20" rx="2" fill="#1a3a52"/>
-            <rect x="12" y="17" width="8" height="8" rx="1" fill="#bcd4e6"/>
-            <g stroke="#5a6570" stroke-width="1.6">
-                <circle cx="38" cy="26" r="8" fill="#c3cad1"/>
-                <circle cx="38" cy="26" r="3.5" fill="#eef1f3"/>
-                <circle cx="54" cy="26" r="8" fill="#c3cad1"/>
-                <circle cx="54" cy="26" r="3.5" fill="#eef1f3"/>
-                <circle cx="70" cy="26" r="8" fill="#c3cad1"/>
-                <circle cx="70" cy="26" r="3.5" fill="#eef1f3"/>
-                <circle cx="86" cy="26" r="8" fill="#c3cad1"/>
-                <circle cx="86" cy="26" r="3.5" fill="#eef1f3"/>
-            </g>
-            <g fill="#333">
-                <circle cx="16" cy="42" r="6"/>
-                <circle cx="66" cy="42" r="6"/>
-                <circle cx="84" cy="42" r="6"/>
-            </g>
-            <g fill="#888">
-                <circle cx="16" cy="42" r="2"/>
-                <circle cx="66" cy="42" r="2"/>
-                <circle cx="84" cy="42" r="2"/>
-            </g>
-        </svg> Load Tracker</h1>
+    <!-- Auth check loading screen -->
+    <div class="auth-loading-screen" id="authLoadingScreen">
+        Loading…
+    </div>
 
-        <p>Sign in to access</p>
+    <!-- Sign In Screen -->
+    <div class="password-screen" id="passwordScreen" style="display: none;">
+        <div class="password-container">
+            <h1><svg class="truck-icon" viewBox="0 0 100 54" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <rect x="24" y="34" width="68" height="6" rx="1" fill="#1a3a52"/>
+                <rect x="20" y="36" width="6" height="4" fill="#333"/>
+                <rect x="2" y="20" width="8" height="14" rx="1" fill="#1a3a52"/>
+                <rect x="8" y="14" width="18" height="20" rx="2" fill="#1a3a52"/>
+                <rect x="12" y="17" width="8" height="8" rx="1" fill="#bcd4e6"/>
+                <g stroke="#5a6570" stroke-width="1.6">
+                    <circle cx="38" cy="26" r="8" fill="#c3cad1"/>
+                    <circle cx="38" cy="26" r="3.5" fill="#eef1f3"/>
+                    <circle cx="54" cy="26" r="8" fill="#c3cad1"/>
+                    <circle cx="54" cy="26" r="3.5" fill="#eef1f3"/>
+                    <circle cx="70" cy="26" r="8" fill="#c3cad1"/>
+                    <circle cx="70" cy="26" r="3.5" fill="#eef1f3"/>
+                    <circle cx="86" cy="26" r="8" fill="#c3cad1"/>
+                    <circle cx="86" cy="26" r="3.5" fill="#eef1f3"/>
+                </g>
+                <g fill="#333">
+                    <circle cx="16" cy="42" r="6"/>
+                    <circle cx="66" cy="42" r="6"/>
+                    <circle cx="84" cy="42" r="6"/>
+                </g>
+                <g fill="#888">
+                    <circle cx="16" cy="42" r="2"/>
+                    <circle cx="66" cy="42" r="2"/>
+                    <circle cx="84" cy="42" r="2"/>
+                </g>
+            </svg> Load Tracker</h1>
+            <p>Sign in to access</p>
 
-        <input
-            type="email"
-            id="emailInput"
-            class="password-input"
-            placeholder="Email address"
-            autocomplete="email"
-            onkeypress="if(event.key==='Enter') document.getElementById('passwordInput').focus()"
-        >
+            <input
+                type="email"
+                id="emailInput"
+                class="password-input"
+                placeholder="Email address"
+                autocomplete="email"
+                onkeypress="if(event.key==='Enter') document.getElementById('passwordInput').focus()"
+            >
 
-        <input
-            type="password"
-            id="passwordInput"
-            class="password-input"
-            placeholder="Password"
-            autocomplete="current-password"
-            onkeypress="if(event.key==='Enter') checkPassword()"
-        >
+            <input
+                type="password"
+                id="passwordInput"
+                class="password-input"
+                placeholder="Password"
+                autocomplete="current-password"
+                onkeypress="if(event.key==='Enter') checkPassword()"
+            >
 
-        <button class="password-btn" onclick="checkPassword()">Sign In</button>
+            <button class="password-btn" onclick="checkPassword()">Sign In</button>
 
-        <div class="password-error" id="passwordError">
-            Incorrect email or password. Try again.
+            <div class="password-error" id="passwordError">
+                Incorrect email or password. Try again.
+            </div>
         </div>
     </div>
-</div>
 
     <!-- Main App -->
     <div class="app-container" id="appContainer">
@@ -736,11 +855,19 @@
                     <p class="header-subtitle">Track active loads in real-time</p>
                 </div>
                 <div class="header-actions">
+                    <span class="signed-in-as" id="signedInAs"></span>
+                    <button class="signout-link" onclick="signOutUser()">Sign out</button>
                     <button class="btn-primary" onclick="openAddLoadModal()">+ Add Load</button>
                     <button class="btn-secondary" onclick="openPdfModal()">📄 PDF</button>
                     <button class="btn-secondary" onclick="clearOldLoads()">Clean</button>
                 </div>
             </header>
+
+            <div class="tab-bar" id="tabBar">
+                <button class="tab-btn active" data-tab="active" onclick="switchTab('active')">Active <span class="tab-count" id="tabCountActive"></span></button>
+                <button class="tab-btn" data-tab="delivered" onclick="switchTab('delivered')">Delivered <span class="tab-count" id="tabCountDelivered"></span></button>
+                <button class="tab-btn" data-tab="pod-received" onclick="switchTab('pod-received')">POD Received <span class="tab-count" id="tabCountPodReceived"></span></button>
+            </div>
 
             <div class="loads-container" id="loadsContainer">
                 <div class="empty-state">
@@ -766,6 +893,11 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="carrierPhone">Carrier Phone (Optional)</label>
+                    <input type="tel" id="carrierPhone" placeholder="e.g., (555) 123-4567">
+                </div>
+
+                <div class="form-group">
                     <label for="rateConNumber">Rate Con Number *</label>
                     <input type="text" id="rateConNumber" required placeholder="e.g., RC-2024-001">
                 </div>
@@ -781,6 +913,11 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="pickupTime">Pickup Time (Optional)</label>
+                    <input type="time" id="pickupTime">
+                </div>
+
+                <div class="form-group">
                     <label for="deliveryCity">Delivery City, State *</label>
                     <input type="text" id="deliveryCity" required placeholder="e.g., Chicago, IL">
                 </div>
@@ -788,6 +925,11 @@
                 <div class="form-group">
                     <label for="deliveryDate">Delivery Date</label>
                     <input type="date" id="deliveryDate">
+                </div>
+
+                <div class="form-group">
+                    <label for="deliveryTime">Delivery Time (Optional)</label>
+                    <input type="time" id="deliveryTime">
                 </div>
 
                 <div class="form-group">
@@ -823,6 +965,11 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="pdfCarrierPhone">Carrier Phone (Optional)</label>
+                    <input type="tel" id="pdfCarrierPhone" placeholder="e.g., (555) 123-4567">
+                </div>
+
+                <div class="form-group">
                     <label for="pdfRateConNumber">Rate Con Number *</label>
                     <input type="text" id="pdfRateConNumber" required placeholder="e.g., RC-2024-001">
                 </div>
@@ -838,6 +985,11 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="pdfPickupTime">Pickup Time (Optional)</label>
+                    <input type="time" id="pdfPickupTime">
+                </div>
+
+                <div class="form-group">
                     <label for="pdfDeliveryCity">Delivery City, State *</label>
                     <input type="text" id="pdfDeliveryCity" required placeholder="e.g., Chicago, IL">
                 </div>
@@ -845,6 +997,11 @@
                 <div class="form-group">
                     <label for="pdfDeliveryDate">Delivery Date</label>
                     <input type="date" id="pdfDeliveryDate">
+                </div>
+
+                <div class="form-group">
+                    <label for="pdfDeliveryTime">Delivery Time (Optional)</label>
+                    <input type="time" id="pdfDeliveryTime">
                 </div>
 
                 <div class="form-group">
@@ -874,6 +1031,11 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="editCarrierPhone">Carrier Phone (Optional)</label>
+                    <input type="tel" id="editCarrierPhone">
+                </div>
+
+                <div class="form-group">
                     <label for="editRateConNumber">Rate Con Number</label>
                     <input type="text" id="editRateConNumber" required>
                 </div>
@@ -889,6 +1051,11 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="editPickupTime">Pickup Time (Optional)</label>
+                    <input type="time" id="editPickupTime">
+                </div>
+
+                <div class="form-group">
                     <label for="editDeliveryCity">Delivery City, State</label>
                     <input type="text" id="editDeliveryCity" required>
                 </div>
@@ -896,6 +1063,11 @@
                 <div class="form-group">
                     <label for="editDeliveryDate">Delivery Date</label>
                     <input type="date" id="editDeliveryDate">
+                </div>
+
+                <div class="form-group">
+                    <label for="editDeliveryTime">Delivery Time (Optional)</label>
+                    <input type="time" id="editDeliveryTime">
                 </div>
 
                 <div class="form-group">
@@ -914,20 +1086,13 @@
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-        // ── Shared storage setup ────────────────────────────────────────
+        // ── Shared storage + auth setup ─────────────────────────────────
         // Loads are stored in Firebase Firestore, so every device reading
         // this page sees the same shared list, kept in sync in real time.
-        // No server function, no per-host setup - this works on Vercel,
-        // Netlify, GitHub Pages, or anywhere else you host the HTML.
-        //
-        // Setup (one time, free, no credit card):
-        //   1. Go to https://console.firebase.google.com -> Add project
-        //   2. Build -> Firestore Database -> Create database -> Start in
-        //      test mode (see the security note further down)
-        //   3. Project settings (gear icon) -> General -> scroll to
-        //      "Your apps" -> Add app -> Web (</>) -> register it
-        //   4. Copy the firebaseConfig object it gives you and paste the
-        //      values in below.
+        // Access is gated by Firebase Authentication (email/password) -
+        // accounts are created manually in the Firebase console under
+        // Authentication -> Users -> Add user. There's no self-signup here
+        // on purpose - only people you've added can sign in.
         const firebaseConfig = {
             apiKey: 'AIzaSyC4IgTneywE92DeE6GzJBhs8RQbILl5HHI',
             authDomain: 'smes-load-track.firebaseapp.com',
@@ -948,15 +1113,17 @@
             db = firebase.firestore();
         }
 
-       
-        const STAGES = ['dispatched', 'in-transit', 'delivered', 'pod-received'];
+        const STAGES = ['dispatched', 'loading', 'in-transit', 'unloading', 'delivered', 'pod-received'];
         const STAGE_LABELS = {
             'dispatched': 'Dispatched',
+            'loading': 'Loading',
             'in-transit': 'In Transit',
+            'unloading': 'Unloading',
             'delivered': 'Delivered',
             'pod-received': 'POD Received'
         };
         const MAX_LOAD_AGE_DAYS = 7;
+        const ACTIVE_STAGES = ['dispatched', 'loading', 'in-transit', 'unloading'];
 
         // Valid US state abbreviations
         const VALID_STATES = [
@@ -970,11 +1137,17 @@
         let loads = [];
         let editingLoadId = null;
         let expandedLoadId = null;
+        let currentTab = 'active';
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab-btn').forEach((btn) => {
+                btn.classList.toggle('active', btn.dataset.tab === tab);
+            });
+            renderLoads();
+        }
 
         // ── Firestore helpers ────────────────────────────────────────
-        // These keep the same names as before (apiCreateLoad etc.) so the
-        // rest of the app - addLoad, updateLoad, deleteLoad, and so on -
-        // didn't need to change, just what's underneath them.
         function apiCreateLoad(load) {
             return db.collection('loads').doc(load.id).set(load);
         }
@@ -996,7 +1169,6 @@
             loadsUnsubscribe = db.collection('loads').onSnapshot(
                 (snapshot) => {
                     loads = snapshot.docs.map((doc) => doc.data()).filter(isLoadFresh);
-                    // Sort newest first, same ordering as before.
                     loads.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
                     renderLoads();
                 },
@@ -1013,56 +1185,87 @@
             );
         }
 
-       async function checkPassword() {
-    const email = document.getElementById('emailInput').value.trim();
-    const password = document.getElementById('passwordInput').value;
-    const errorElement = document.getElementById('passwordError');
+        function enterApp(user) {
+            document.getElementById('authLoadingScreen').style.display = 'none';
+            document.getElementById('passwordScreen').style.display = 'none';
+            document.getElementById('appContainer').classList.add('active');
+            document.getElementById('signedInAs').textContent = user && user.email ? user.email : '';
 
-    errorElement.style.display = 'none';
+            document.getElementById('loadsContainer').innerHTML = `
+                <div class="empty-state">
+                    <h2>Loading loads…</h2>
+                </div>
+            `;
+            subscribeToLoads();
+        }
 
-    if (!email || !password) {
-        errorElement.textContent = 'Please enter your email and password.';
-        errorElement.style.display = 'block';
-        return;
-    }
+        function showSignInScreen() {
+            document.getElementById('authLoadingScreen').style.display = 'none';
+            document.getElementById('appContainer').classList.remove('active');
+            document.getElementById('passwordScreen').style.display = 'flex';
+        }
 
-    if (!isFirebaseConfigured()) {
-        errorElement.textContent = 'Firebase is not configured.';
-        errorElement.style.display = 'block';
-        return;
-    }
+        // Firebase keeps you signed in across page loads/reloads by default -
+        // this listener is what actually takes advantage of that, so you
+        // don't have to sign in again every visit. It fires once on load
+        // with whatever the current auth state already is.
+        if (isFirebaseConfigured()) {
+            firebase.auth().onAuthStateChanged((user) => {
+                if (user) {
+                    enterApp(user);
+                } else {
+                    showSignInScreen();
+                }
+            });
+        } else {
+            document.getElementById('authLoadingScreen').style.display = 'none';
+            document.getElementById('passwordScreen').style.display = 'flex';
+        }
 
-    try {
-        await firebase.auth().signInWithEmailAndPassword(email, password);
+        async function checkPassword() {
+            const email = document.getElementById('emailInput').value.trim();
+            const password = document.getElementById('passwordInput').value;
+            const errorElement = document.getElementById('passwordError');
 
-        document.getElementById('passwordScreen').style.display = 'none';
-        document.getElementById('appContainer').classList.add('active');
+            errorElement.style.display = 'none';
 
-        document.getElementById('loadsContainer').innerHTML = `
-            <div class="empty-state">
-                <h2>Loading loads…</h2>
-            </div>
-        `;
+            if (!email || !password) {
+                errorElement.textContent = 'Please enter your email and password.';
+                errorElement.style.display = 'block';
+                return;
+            }
 
-        subscribeToLoads();
+            if (!isFirebaseConfigured()) {
+                errorElement.textContent = 'Firebase is not configured.';
+                errorElement.style.display = 'block';
+                return;
+            }
 
-    } catch (error) {
-        console.error('Firebase login error:', error);
+            try {
+                await firebase.auth().signInWithEmailAndPassword(email, password);
+                // onAuthStateChanged above handles entering the app.
+            } catch (error) {
+                console.error('Firebase login error:', error);
+                errorElement.textContent = 'Incorrect email or password. Try again.';
+                errorElement.style.display = 'block';
+                document.getElementById('passwordInput').value = '';
+                document.getElementById('passwordInput').focus();
+            }
+        }
 
-        errorElement.textContent = 'Incorrect email or password. Try again.';
-        errorElement.style.display = 'block';
-
-        document.getElementById('passwordInput').value = '';
-        document.getElementById('passwordInput').focus();
-    }
-}
+        function signOutUser() {
+            if (loadsUnsubscribe) {
+                loadsUnsubscribe();
+                loadsUnsubscribe = null;
+            }
+            firebase.auth().signOut();
+            // onAuthStateChanged above handles showing the sign-in screen.
+        }
 
         function generateId() {
             if (window.crypto && crypto.randomUUID) {
                 return crypto.randomUUID();
             }
-            // Fallback for older browsers: timestamp + random suffix avoids
-            // collisions when two loads are added in the same millisecond.
             return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
         }
 
@@ -1135,8 +1338,6 @@
                 return;
             }
 
-            // Assign the dropped file to the actual <input type="file">
-            // so the form's "required" validation still passes on submit.
             const dataTransfer = new DataTransfer();
             dataTransfer.items.add(file);
             document.getElementById('pdfFile').files = dataTransfer.files;
@@ -1166,24 +1367,72 @@
                     const text = textContent.items.map(item => item.str).join(' ');
 
                     let carrierName = '';
+                    let carrierPhone = '';
                     let rateConNumber = '';
                     let pickupCity = '';
                     let deliveryCity = '';
 
-                    // Extract carrier name (look for trucking company patterns).
-                    // Case-insensitive so it also matches normal mixed-case PDFs,
-                    // not just all-caps ones.
-                    const carrierMatch = text.match(/([A-Za-z][A-Za-z0-9\s&,.'-]*?(?:TRUCKING|TRANSPORT|TRANSPORTATION|LOGISTICS|CARRIERS?|FREIGHT|LLC|INC)\b[A-Za-z0-9\s&,.'-]*)/i);
-                    if (carrierMatch) {
-                        carrierName = carrierMatch[0].trim().replace(/\s{2,}/g, ' ');
+                    const WINDOW = 150; // chars to search after a label
+
+                    // Carrier: search near an explicit "Carrier" label first -
+                    // far more reliable than pattern-matching, since it won't
+                    // accidentally grab the broker's own name if that also
+                    // contains words like "Logistics" or "LLC".
+                    const carrierLabels = [
+                        /Carrier\s*Name[:\s]*/i,
+                        /Carrier[:\s]*/i,
+                        /SCAC[:\s]*/i
+                    ];
+                    for (const pattern of carrierLabels) {
+                        const m = pattern.exec(text);
+                        if (m) {
+                            const chunk = text.slice(m.index + m[0].length, m.index + m[0].length + 80);
+                            const nameMatch = chunk.match(/^([A-Za-z0-9][A-Za-z0-9\s&,.'-]{2,60}?)(?=\s{2,}|\s+(?:MC#|DOT#|Phone|Tel|Address|\d{3}[-.]?\d{3}[-.]?\d{4})|$)/);
+                            if (nameMatch) {
+                                carrierName = nameMatch[1].trim();
+                                break;
+                            }
+                        }
+                    }
+                    // Fallback: generic pattern match for common carrier-name suffixes.
+                    if (!carrierName) {
+                        const carrierMatch = text.match(/([A-Za-z][A-Za-z0-9\s&,.'-]*?(?:TRUCKING|TRANSPORT|TRANSPORTATION|LOGISTICS|CARRIERS?|FREIGHT|LLC|INC)\b[A-Za-z0-9\s&,.'-]*)/i);
+                        if (carrierMatch) {
+                            carrierName = carrierMatch[0].trim().replace(/\s{2,}/g, ' ');
+                        }
                     }
 
-                    // Extract order/rate con number - try a few common label formats.
+                    // Carrier phone - search near carrier/dispatch labels first,
+                    // then fall back to the first phone-shaped number anywhere.
+                    function findPhone(searchText) {
+                        const m = searchText.match(/\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
+                        return m ? m[0].trim() : null;
+                    }
+                    const phoneLabels = [
+                        /Carrier\s*Phone[:\s]*/i,
+                        /Dispatch\s*Phone[:\s]*/i,
+                        /Phone[:\s]*/i,
+                        /Tel(?:ephone)?[:\s]*/i
+                    ];
+                    for (const pattern of phoneLabels) {
+                        const m = pattern.exec(text);
+                        if (m) {
+                            const found = findPhone(text.slice(m.index + m[0].length, m.index + m[0].length + 40));
+                            if (found) {
+                                carrierPhone = found;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Rate con / order number - try several common label formats,
+                    // preferring ones explicitly about the rate confirmation over
+                    // generic PO/order numbers where possible.
                     const rateConPatterns = [
-                        /Order\s*#[:\s]*([A-Za-z0-9-]+)/i,
                         /Rate\s*Con(?:firmation)?\s*#?[:\s]*([A-Za-z0-9-]+)/i,
                         /Load\s*#[:\s]*([A-Za-z0-9-]+)/i,
-                        /Confirmation\s*#[:\s]*([A-Za-z0-9-]+)/i
+                        /Confirmation\s*#[:\s]*([A-Za-z0-9-]+)/i,
+                        /Order\s*#[:\s]*([A-Za-z0-9-]+)/i
                     ];
                     for (const pattern of rateConPatterns) {
                         const m = text.match(pattern);
@@ -1193,15 +1442,15 @@
                         }
                     }
 
-                    // Extract pickup and delivery cities. City names are usually
-                    // mixed case ("Denver"), while the state code is uppercase -
+                    // Pickup and delivery cities. City names are usually mixed
+                    // case ("Denver"), while the state code is uppercase -
                     // matching only ALL CAPS cities was missing almost every
                     // real-world rate confirmation.
                     const cityStatePattern = /([A-Za-z][A-Za-z\s]*?),?\s+([A-Z]{2})(?=[\s,.]|$)/g;
 
                     function findCityState(searchText) {
                         const match = cityStatePattern.exec(searchText);
-                        cityStatePattern.lastIndex = 0; // reset shared regex state
+                        cityStatePattern.lastIndex = 0;
                         if (!match) return null;
                         const city = match[1].trim();
                         const state = match[2].trim();
@@ -1211,12 +1460,6 @@
                         return null;
                     }
 
-                    // Rate cons almost always label pickup/delivery explicitly.
-                    // Search near those labels first - it's far more reliable
-                    // than grabbing the first two city/state pairs in the raw
-                    // text, which are just as likely to be the broker's or
-                    // carrier's mailing address.
-                    const WINDOW = 150; // chars to search after a label
                     function findLabeledLocation(labelPatterns) {
                         for (const pattern of labelPatterns) {
                             const m = pattern.exec(text);
@@ -1246,9 +1489,6 @@
                     pickupCity = findLabeledLocation(pickupLabels) || '';
                     deliveryCity = findLabeledLocation(deliveryLabels) || '';
 
-                    // Fallback: if labels weren't found (or the PDF just lists
-                    // addresses in order), fall back to the first two distinct
-                    // city/state pairs anywhere in the document.
                     if (!pickupCity || !deliveryCity) {
                         const matches = [...text.matchAll(cityStatePattern)];
                         const validCities = [];
@@ -1268,8 +1508,7 @@
                         }
                     }
 
-                    // Extract pickup and delivery dates the same way - search
-                    // near common date labels first.
+                    // Pickup/delivery dates - search near common date labels first.
                     function findDate(searchText) {
                         const m = searchText.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
                         if (!m) return null;
@@ -1306,15 +1545,45 @@
                     const pickupDate = findLabeledDate(pickupDateLabels) || '';
                     const deliveryDate = findLabeledDate(deliveryDateLabels) || '';
 
+                    // Pickup/delivery times, e.g. "2:30 PM".
+                    function findTime(searchText) {
+                        const m = searchText.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?/);
+                        if (!m) return null;
+                        let hh = parseInt(m[1], 10);
+                        const mm = parseInt(m[2], 10);
+                        const ampm = (m[3] || '').toUpperCase();
+                        if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+                        if (ampm === 'PM' && hh < 12) hh += 12;
+                        if (ampm === 'AM' && hh === 12) hh = 0;
+                        return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+                    }
+
+                    function findLabeledTime(labelPatterns) {
+                        for (const pattern of labelPatterns) {
+                            const m = pattern.exec(text);
+                            if (m) {
+                                const start = m.index + m[0].length;
+                                const found = findTime(text.slice(start, start + WINDOW));
+                                if (found) return found;
+                            }
+                        }
+                        return null;
+                    }
+
+                    const pickupTime = findLabeledTime(pickupDateLabels.concat([/Pick\s*-?\s*Up\s*Time[:\s]*/i])) || '';
+                    const deliveryTime = findLabeledTime(deliveryDateLabels.concat([/Delivery\s*Time[:\s]*/i])) || '';
+
                     // Fill in the fields
                     if (carrierName) document.getElementById('pdfCarrierName').value = carrierName;
+                    if (carrierPhone) document.getElementById('pdfCarrierPhone').value = carrierPhone;
                     if (rateConNumber) document.getElementById('pdfRateConNumber').value = rateConNumber;
                     if (pickupCity) document.getElementById('pdfPickupCity').value = pickupCity;
                     if (deliveryCity) document.getElementById('pdfDeliveryCity').value = deliveryCity;
                     if (pickupDate) document.getElementById('pdfPickupDate').value = pickupDate;
                     if (deliveryDate) document.getElementById('pdfDeliveryDate').value = deliveryDate;
+                    if (pickupTime) document.getElementById('pdfPickupTime').value = pickupTime;
+                    if (deliveryTime) document.getElementById('pdfDeliveryTime').value = deliveryTime;
 
-                    // Show status
                     if (carrierName && rateConNumber && pickupCity && deliveryCity) {
                         statusDiv.textContent = '✓ PDF extracted successfully! Review and adjust if needed.';
                         statusDiv.className = 'extraction-status success';
@@ -1348,11 +1617,14 @@
             const load = {
                 id: generateId(),
                 carrierName: document.getElementById('carrierName').value.trim(),
+                carrierPhone: document.getElementById('carrierPhone').value.trim(),
                 rateConNumber: document.getElementById('rateConNumber').value.trim(),
                 pickupCity: document.getElementById('pickupCity').value.trim(),
                 pickupDate: document.getElementById('pickupDate').value,
+                pickupTime: document.getElementById('pickupTime').value,
                 deliveryCity: document.getElementById('deliveryCity').value.trim(),
                 deliveryDate: document.getElementById('deliveryDate').value,
+                deliveryTime: document.getElementById('deliveryTime').value,
                 loadNotes: document.getElementById('loadNotes').value.trim(),
                 status: 'dispatched',
                 createdAt: new Date().toISOString(),
@@ -1379,11 +1651,14 @@
             const load = {
                 id: generateId(),
                 carrierName: document.getElementById('pdfCarrierName').value.trim(),
+                carrierPhone: document.getElementById('pdfCarrierPhone').value.trim(),
                 rateConNumber: document.getElementById('pdfRateConNumber').value.trim(),
                 pickupCity: document.getElementById('pdfPickupCity').value.trim(),
                 pickupDate: document.getElementById('pdfPickupDate').value,
+                pickupTime: document.getElementById('pdfPickupTime').value,
                 deliveryCity: document.getElementById('pdfDeliveryCity').value.trim(),
                 deliveryDate: document.getElementById('pdfDeliveryDate').value,
+                deliveryTime: document.getElementById('pdfDeliveryTime').value,
                 loadNotes: document.getElementById('pdfLoadNotes').value.trim(),
                 status: 'dispatched',
                 createdAt: new Date().toISOString(),
@@ -1454,11 +1729,14 @@
             if (load) {
                 editingLoadId = loadId;
                 document.getElementById('editCarrierName').value = load.carrierName;
+                document.getElementById('editCarrierPhone').value = load.carrierPhone || '';
                 document.getElementById('editRateConNumber').value = load.rateConNumber;
                 document.getElementById('editPickupCity').value = load.pickupCity;
                 document.getElementById('editPickupDate').value = load.pickupDate || '';
+                document.getElementById('editPickupTime').value = load.pickupTime || '';
                 document.getElementById('editDeliveryCity').value = load.deliveryCity;
                 document.getElementById('editDeliveryDate').value = load.deliveryDate || '';
+                document.getElementById('editDeliveryTime').value = load.deliveryTime || '';
                 document.getElementById('editLoadNotes').value = load.loadNotes || '';
                 document.getElementById('editLoadModal').classList.add('active');
             }
@@ -1475,11 +1753,14 @@
 
             const previous = { ...load };
             load.carrierName = document.getElementById('editCarrierName').value.trim();
+            load.carrierPhone = document.getElementById('editCarrierPhone').value.trim();
             load.rateConNumber = document.getElementById('editRateConNumber').value.trim();
             load.pickupCity = document.getElementById('editPickupCity').value.trim();
             load.pickupDate = document.getElementById('editPickupDate').value;
+            load.pickupTime = document.getElementById('editPickupTime').value;
             load.deliveryCity = document.getElementById('editDeliveryCity').value.trim();
             load.deliveryDate = document.getElementById('editDeliveryDate').value;
+            load.deliveryTime = document.getElementById('editDeliveryTime').value;
             load.loadNotes = document.getElementById('editLoadNotes').value.trim();
             load.updatedAt = new Date().toISOString();
             renderLoads();
@@ -1531,8 +1812,6 @@
                 updatedAt: new Date().toISOString()
             };
 
-            // Insert right after the original so duplicates for the same
-            // lane/carrier stay grouped together in the list.
             loads.splice(index + 1, 0, copy);
             renderLoads();
             closeDropdown(loadId);
@@ -1564,7 +1843,6 @@
             } catch (err) {
                 console.error('Failed to clean up old loads:', err);
                 alert('Could not remove old loads from the server - check your connection and try again.');
-                // The Firestore listener will reconcile the list automatically.
             }
         }
 
@@ -1593,18 +1871,36 @@
         function renderLoads() {
             const container = document.getElementById('loadsContainer');
 
-            if (loads.length === 0) {
+            const activeCount = loads.filter(l => ACTIVE_STAGES.includes(l.status)).length;
+            const deliveredCount = loads.filter(l => l.status === 'delivered').length;
+            const podReceivedCount = loads.filter(l => l.status === 'pod-received').length;
+            document.getElementById('tabCountActive').textContent = activeCount ? `(${activeCount})` : '';
+            document.getElementById('tabCountDelivered').textContent = deliveredCount ? `(${deliveredCount})` : '';
+            document.getElementById('tabCountPodReceived').textContent = podReceivedCount ? `(${podReceivedCount})` : '';
+
+            const visibleLoads = loads.filter((load) => {
+                if (currentTab === 'active') return ACTIVE_STAGES.includes(load.status);
+                return load.status === currentTab;
+            });
+
+            if (visibleLoads.length === 0) {
+                const emptyLabels = {
+                    'active': ['📭', 'No Active Loads', 'Add your first load to get started'],
+                    'delivered': ['📦', 'No Delivered Loads', 'Loads marked Delivered will show up here'],
+                    'pod-received': ['✅', 'No POD Received Loads', 'Loads marked POD Received will show up here']
+                };
+                const [icon, title, subtitle] = emptyLabels[currentTab];
                 container.innerHTML = `
                     <div class="empty-state">
-                        <div class="empty-state-icon">📭</div>
-                        <h2>No Active Loads</h2>
-                        <p>Add your first load to get started</p>
+                        <div class="empty-state-icon">${icon}</div>
+                        <h2>${title}</h2>
+                        <p>${subtitle}</p>
                     </div>
                 `;
                 return;
             }
 
-            container.innerHTML = loads.map(load => `
+            container.innerHTML = visibleLoads.map(load => `
                 <div class="load-card ${load.status}">
                     <div class="load-card-collapsed" onclick="toggleCardExpand('${load.id}', event)">
                         <div class="load-field field-rate-con">
@@ -1613,6 +1909,7 @@
                         <div class="load-field field-carrier">
                             <div class="load-field-label">Carrier</div>
                             <div class="load-field-value">${escapeHtml(load.carrierName)}</div>
+                            ${load.carrierPhone ? `<div class="load-carrier-phone">${escapeHtml(load.carrierPhone)}</div>` : ''}
                         </div>
                         <div class="load-field field-pickup">
                             <div class="load-field-label">Pickup</div>
@@ -1623,12 +1920,26 @@
                             <div class="load-field-value">${formatDateShort(load.deliveryDate) ? formatDateShort(load.deliveryDate) + ', ' : ''}${escapeHtml(load.deliveryCity)}</div>
                         </div>
                         <span class="status-badge-compact ${load.status}">${STAGE_LABELS[load.status] || load.status}</span>
+                        <div class="load-stage-nav">
+                            <button
+                                class="stage-nav-btn"
+                                onclick="event.stopPropagation(); moveLoadBackward('${load.id}')"
+                                title="Move back a stage"
+                                ${STAGES.indexOf(load.status) === 0 ? 'disabled' : ''}
+                            >←</button>
+                            <button
+                                class="stage-nav-btn"
+                                onclick="event.stopPropagation(); moveLoadForward('${load.id}')"
+                                title="Move forward a stage"
+                                ${STAGES.indexOf(load.status) === STAGES.length - 1 ? 'disabled' : ''}
+                            >→</button>
+                        </div>
                         <div class="load-card-menu">
                             <button class="menu-btn" onclick="toggleDropdown('${load.id}', event)">⋮</button>
                             <div class="dropdown-menu" data-menu="${load.id}">
                                 <button onclick="openEditModal('${load.id}')">Edit</button>
-                                <button class="delete" onclick="deleteLoad('${load.id}')">Delete</button>
                                 <button onclick="duplicateLoad('${load.id}')">Duplicate</button>
+                                <button class="delete" onclick="deleteLoad('${load.id}')">Delete</button>
                             </div>
                         </div>
                     </div>
@@ -1636,7 +1947,7 @@
                         ${(load.pickupDate || load.deliveryDate) ? `
                             <div class="expanded-section">
                                 <div class="expanded-section-label">Dates</div>
-                                <div class="expanded-section-value">Pickup: ${formatDateLong(load.pickupDate) || '—'} &nbsp;·&nbsp; Delivery: ${formatDateLong(load.deliveryDate) || '—'}</div>
+                                <div class="expanded-section-value">Pickup: ${formatDateLong(load.pickupDate) || '—'}${load.pickupTime ? ' at ' + formatTime(load.pickupTime) : ''} &nbsp;·&nbsp; Delivery: ${formatDateLong(load.deliveryDate) || '—'}${load.deliveryTime ? ' at ' + formatTime(load.deliveryTime) : ''}</div>
                             </div>
                         ` : ''}
                         ${load.loadNotes ? `
@@ -1660,14 +1971,6 @@
                                 `).join('')}
                             </div>
                         </div>
-                        <div class="load-actions">
-                            ${STAGES.indexOf(load.status) > 0 ? `
-                                <button class="btn-secondary btn-small" onclick="moveLoadBackward('${load.id}')">← Back</button>
-                            ` : ''}
-                            ${STAGES.indexOf(load.status) < STAGES.length - 1 ? `
-                                <button class="btn-primary btn-small" onclick="moveLoadForward('${load.id}')">Forward →</button>
-                            ` : ''}
-                        </div>
                     </div>
                 </div>
             `).join('');
@@ -1689,6 +1992,14 @@
         function formatDateLong(isoDate) {
             const dt = parseIsoDateLocal(isoDate);
             return dt ? dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : '';
+        }
+
+        function formatTime(timeStr) {
+            if (!timeStr) return '';
+            const [h, m] = timeStr.split(':').map(Number);
+            if (isNaN(h) || isNaN(m)) return '';
+            const dt = new Date(2000, 0, 1, h, m);
+            return dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
         }
 
         function escapeHtml(text) {

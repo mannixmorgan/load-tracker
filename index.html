@@ -14,7 +14,7 @@
             padding: 0;
             box-sizing: border-box;
         }
- 
+
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #1a3a52 0%, #0f2438 100%);
@@ -422,27 +422,27 @@
         }
 
         .load-card.dispatched {
-            border-left-color: #FF8C00;
+            border-left-color: #FF7A00;
         }
 
         .load-card.loading {
-            border-left-color: #FFB300;
+            border-left-color: #FFA726;
         }
 
         .load-card.in-transit {
-            border-left-color: #FFD700;
+            border-left-color: #FFCA28;
         }
 
         .load-card.unloading {
-            border-left-color: #64B5F6;
+            border-left-color: #9CCC65;
         }
 
         .load-card.delivered {
-            border-left-color: #2196f3;
+            border-left-color: #66BB6A;
         }
 
         .load-card.pod-received {
-            border-left-color: #4caf50;
+            border-left-color: #26A69A;
         }
 
         .load-card-collapsed {
@@ -501,6 +501,13 @@
             color: #999;
         }
 
+        .load-field-sub {
+            font-size: 12px;
+            font-weight: 600;
+            color: #999;
+            margin-top: 1px;
+        }
+
         .load-field.field-pickup,
         .load-field.field-delivery {
             flex: 1 1 190px;
@@ -517,32 +524,32 @@
         }
 
         .status-badge-compact.dispatched {
-            background: #FF8C00;
+            background: #FF7A00;
             color: white;
         }
 
         .status-badge-compact.loading {
-            background: #FFB300;
+            background: #FFA726;
             color: white;
         }
 
         .status-badge-compact.in-transit {
-            background: #FFD700;
+            background: #FFCA28;
             color: #333;
         }
 
         .status-badge-compact.unloading {
-            background: #64B5F6;
-            color: white;
+            background: #9CCC65;
+            color: #333;
         }
 
         .status-badge-compact.delivered {
-            background: #2196f3;
+            background: #66BB6A;
             color: white;
         }
 
         .status-badge-compact.pod-received {
-            background: #4caf50;
+            background: #26A69A;
             color: white;
         }
 
@@ -1913,11 +1920,13 @@
                         </div>
                         <div class="load-field field-pickup">
                             <div class="load-field-label">Pickup</div>
-                            <div class="load-field-value">${formatDateShort(load.pickupDate) ? formatDateShort(load.pickupDate) + ', ' : ''}${escapeHtml(load.pickupCity)}</div>
+                            <div class="load-field-value">${escapeHtml(load.pickupCity)}</div>
+                            ${(load.pickupDate || load.pickupTime) ? `<div class="load-field-sub">${formatDateShort(load.pickupDate)}${load.pickupTime ? ' · ' + formatTime(load.pickupTime) : ''}</div>` : ''}
                         </div>
                         <div class="load-field field-delivery">
                             <div class="load-field-label">Delivery</div>
-                            <div class="load-field-value">${formatDateShort(load.deliveryDate) ? formatDateShort(load.deliveryDate) + ', ' : ''}${escapeHtml(load.deliveryCity)}</div>
+                            <div class="load-field-value">${escapeHtml(load.deliveryCity)}</div>
+                            ${(load.deliveryDate || load.deliveryTime) ? `<div class="load-field-sub">${formatDateShort(load.deliveryDate)}${load.deliveryTime ? ' · ' + formatTime(load.deliveryTime) : ''}</div>` : ''}
                         </div>
                         <span class="status-badge-compact ${load.status}">${STAGE_LABELS[load.status] || load.status}</span>
                         <div class="load-stage-nav">

@@ -111,6 +111,26 @@
             font-size: 16px;
         }
 
+        .page-drop-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(26, 58, 82, 0.92);
+            color: white;
+            align-items: center;
+            justify-content: center;
+            font-size: 26px;
+            font-weight: 800;
+            z-index: 5000;
+            pointer-events: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .page-drop-overlay.active {
+            display: flex;
+        }
+
         .container {
             max-width: 960px;
             margin: 0 auto;
@@ -771,6 +791,11 @@
     </style>
 </head>
 <body>
+    <!-- Whole-page PDF drop overlay -->
+    <div class="page-drop-overlay" id="pageDropOverlay">
+        <div>📄 Drop to import this rate con</div>
+    </div>
+
     <!-- Auth check loading screen -->
     <div class="auth-loading-screen" id="authLoadingScreen">
         Loading…
@@ -1333,16 +1358,19 @@
 
         function handleDragOver(event) {
             event.preventDefault();
+            event.stopPropagation();
             document.getElementById('pdfDropZone').classList.add('drag-over');
         }
 
         function handleDragLeave(event) {
             event.preventDefault();
+            event.stopPropagation();
             document.getElementById('pdfDropZone').classList.remove('drag-over');
         }
 
         function handleFileDrop(event) {
             event.preventDefault();
+            event.stopPropagation();
             document.getElementById('pdfDropZone').classList.remove('drag-over');
 
             const file = event.dataTransfer.files && event.dataTransfer.files[0];
@@ -1361,6 +1389,56 @@
 
             processPdfFile(file);
         }
+
+        // ── Whole-page drag-and-drop ──────────────────────────────────
+        // Lets you drag a rate con PDF from another tab/window straight
+        // onto the app - anywhere on the page, not just the import modal -
+        // and it opens the PDF import flow automatically.
+        let pageDragCounter = 0;
+
+        function handlePageDragOver(event) {
+            event.preventDefault();
+        }
+
+        function handlePageDragEnter(event) {
+            event.preventDefault();
+            if (!event.dataTransfer || !event.dataTransfer.types || !event.dataTransfer.types.includes('Files')) return;
+            if (!document.getElementById('appContainer').classList.contains('active')) return;
+            pageDragCounter++;
+            document.getElementById('pageDropOverlay').classList.add('active');
+        }
+
+        function handlePageDragLeave(event) {
+            event.preventDefault();
+            pageDragCounter = Math.max(0, pageDragCounter - 1);
+            if (pageDragCounter === 0) {
+                document.getElementById('pageDropOverlay').classList.remove('active');
+            }
+        }
+
+        function handlePageDrop(event) {
+            event.preventDefault();
+            pageDragCounter = 0;
+            document.getElementById('pageDropOverlay').classList.remove('active');
+
+            if (!document.getElementById('appContainer').classList.contains('active')) return;
+
+            const file = event.dataTransfer.files && event.dataTransfer.files[0];
+            if (!file) return;
+
+            if (!file.name.toLowerCase().endsWith('.pdf')) return;
+
+            openPdfModal();
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            document.getElementById('pdfFile').files = dataTransfer.files;
+            processPdfFile(file);
+        }
+
+        document.addEventListener('dragover', handlePageDragOver);
+        document.addEventListener('dragenter', handlePageDragEnter);
+        document.addEventListener('dragleave', handlePageDragLeave);
+        document.addEventListener('drop', handlePageDrop);
 
         async function extractPdfData(event) {
             const file = event.target.files[0];

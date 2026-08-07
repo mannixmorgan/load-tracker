@@ -453,7 +453,6 @@
             gap: 16px;
             cursor: pointer;
             flex-wrap: nowrap;
-            overflow-x: auto;
         }
 
         .load-card-collapsed:hover {
@@ -761,7 +760,6 @@
             .load-card-collapsed {
                 gap: 12px 20px;
                 flex-wrap: wrap;
-                overflow-x: visible;
             }
 
             .load-field.field-carrier,
@@ -1611,13 +1609,15 @@
                     const pickupDateLabels = [
                         /Pick\s*-?\s*Up\s*Date[:\s]*/i,
                         /Ship\s*Date[:\s]*/i,
-                        /Origin\s*Date[:\s]*/i
+                        /Origin\s*Date[:\s]*/i,
+                        ...pickupLabels
                     ];
                     const deliveryDateLabels = [
                         /Delivery\s*Date[:\s]*/i,
                         /Drop\s*-?\s*Off\s*Date[:\s]*/i,
                         /Del(?:iv)?\s*Date[:\s]*/i,
-                        /Destination\s*Date[:\s]*/i
+                        /Destination\s*Date[:\s]*/i,
+                        ...deliveryLabels
                     ];
 
                     const pickupDate = findLabeledDate(pickupDateLabels) || '';

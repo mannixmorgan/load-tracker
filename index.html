@@ -1647,11 +1647,75 @@
                         /Ship\s*To[:\s]*/i
                     ];
 
-                    pickupCity = findLabeledLocation(pickupLabels) || '';
-                    deliveryCity = findLabeledLocation(deliveryLabels) || '';
+                    // Strategy 1 (most reliable for this template): the very
+                    // top of the page always has a "CITY, ST -> CITY, ST"
+                    // route summary in all-caps, e.g. "EL RENO, OK -> CASPER,
+                    // WY". This is a single fixed anchor that doesn't depend
+                    // on guessing label position, unlike the Pickup/Deliver
+                    // sections further down whose layout can vary.
+                    //
+                    // The city match is deliberately case-SENSITIVE (only
+                    // A-Z, no lowercase) and searches for the *shortest*
+                    // valid match starting at a real word boundary. Both
+                    // properties matter: without them, an all-caps fragment
+                    // left over from an email domain just before this line
+                    // (e.g. "...SERVICES.COM  EL RENO, OK") can bleed into
+                    // the captured city, or swallow "Carrier Confirmation"
+                    // (mixed-case, so excluded by the case check) entirely.
+                    const routeCityStatePattern = /([A-Z][A-Z\s]*?),?\s+([A-Z]{2})(?=[\s,.]|$)/;
 
+                    function findRouteCityBackward(searchText) {
+                        for (let start = 0; start < searchText.length; start++) {
+                            if (start !== 0 && searchText[start - 1] !== ' ') continue;
+                            const suffix = searchText.slice(start);
+                            const m = suffix.match(/^([A-Z][A-Z\s]*?),?\s+([A-Z]{2})\s*$/);
+                            if (m) {
+                                const city = m[1].trim(), state = m[2].trim();
+                                if (VALID_STATES.includes(state) && city.length > 1 && city.length < 30) {
+                                    return `${city}, ${state}`;
+                                }
+                            }
+                        }
+                        return null;
+                    }
+
+                    function findRouteCityForward(searchText) {
+                        const m = searchText.match(/^\s*([A-Z][A-Z\s]*?),?\s+([A-Z]{2})(?=[\s,.]|$)/);
+                        if (m) {
+                            const city = m[1].trim(), state = m[2].trim();
+                            if (VALID_STATES.includes(state) && city.length > 1 && city.length < 30) {
+                                return `${city}, ${state}`;
+                            }
+                        }
+                        return null;
+                    }
+
+                    const arrowMatch = /-+>/.exec(text);
+                    if (arrowMatch) {
+                        const ARROW_WINDOW = 100;
+                        const before = text.slice(Math.max(0, arrowMatch.index - ARROW_WINDOW), arrowMatch.index);
+                        const after = text.slice(arrowMatch.index + arrowMatch[0].length, arrowMatch.index + arrowMatch[0].length + ARROW_WINDOW);
+                        pickupCity = findRouteCityBackward(before) || '';
+                        deliveryCity = findRouteCityForward(after) || '';
+                    }
+
+                    // Strategy 2: search near the Pickup/Deliver section
+                    // labels further down the page, if the route line wasn't
+                    // found (different template) or didn't parse.
+                    if (!pickupCity) pickupCity = findLabeledLocation(pickupLabels) || '';
+                    if (!deliveryCity) deliveryCity = findLabeledLocation(deliveryLabels) || '';
+
+                    // Strategy 3 (last resort): scan the whole document for
+                    // any city/state pair. This is the least reliable
+                    // option - it can pick up an address that has nothing to
+                    // do with the actual pickup/delivery (e.g. the broker's
+                    // own Bill-To address) - so only candidates found AFTER
+                    // the carrier's "Contact:" line are considered, since
+                    // the Bill-To block always appears before that point in
+                    // this template.
                     if (!pickupCity || !deliveryCity) {
-                        const matches = [...text.matchAll(cityStatePattern)];
+                        const searchFrom = contactMatch ? contactMatch.index : 0;
+                        const matches = [...text.slice(searchFrom).matchAll(cityStatePattern)];
                         const validCities = [];
                         for (const match of matches) {
                             const city = match[1].trim();

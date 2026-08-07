@@ -1583,7 +1583,7 @@
                     // real-world rate confirmation.
                     const cityStatePattern = /([A-Za-z][A-Za-z\s]*?),?\s+([A-Z]{2})(?=[\s,.]|$)/g;
 
-                    function findCityState(searchText) {
+                    function findCityStateForward(searchText) {
                         const match = cityStatePattern.exec(searchText);
                         cityStatePattern.lastIndex = 0;
                         if (!match) return null;
@@ -1595,13 +1595,39 @@
                         return null;
                     }
 
+                    // Some templates put the city/date BEFORE the "Pickup"/
+                    // "Deliver" label rather than after it (confirmed against
+                    // real extracted text - the label can be the LAST thing
+                    // in that row, not the first). This checks the text just
+                    // before the label, taking the match closest to it.
+                    function findCityStateBackward(searchText) {
+                        const matches = [...searchText.matchAll(cityStatePattern)];
+                        if (!matches.length) return null;
+                        const last = matches[matches.length - 1];
+                        const city = last[1].trim();
+                        const state = last[2].trim();
+                        if (VALID_STATES.includes(state) && city.length > 2 && city.length < 30) {
+                            return `${city}, ${state}`;
+                        }
+                        return null;
+                    }
+
                     function findLabeledLocation(labelPatterns) {
                         for (const pattern of labelPatterns) {
                             const m = pattern.exec(text);
                             if (m) {
+                                // Try backward first - it's the correct
+                                // direction for the recurring template this
+                                // was tuned against, and a wrong forward
+                                // match (e.g. reaching into unrelated text
+                                // far below) is more likely than a wrong
+                                // backward one for a location right next to
+                                // its label.
+                                const back = findCityStateBackward(text.slice(Math.max(0, m.index - WINDOW), m.index));
+                                if (back) return back;
                                 const start = m.index + m[0].length;
-                                const found = findCityState(text.slice(start, start + WINDOW));
-                                if (found) return found;
+                                const fwd = findCityStateForward(text.slice(start, start + WINDOW));
+                                if (fwd) return fwd;
                             }
                         }
                         return null;
@@ -1643,31 +1669,60 @@
                         }
                     }
 
-                    // Pickup/delivery dates - search near common date labels first.
+                    // Pickup/delivery dates - search near common date labels.
                     const MONTH_NAMES = {
                         jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
                         jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12
                     };
-                    function findDate(searchText) {
-                        // Numeric form: 6/9/2026 or 06-09-2026
+                    function parseNamedDate(monthStr, dayStr, yearStr) {
+                        const monthKey = monthStr.slice(0, 3).toLowerCase();
+                        const mm = MONTH_NAMES[monthKey];
+                        const dd = parseInt(dayStr, 10);
+                        const yyyy = parseInt(yearStr, 10);
+                        if (mm && dd >= 1 && dd <= 31) {
+                            return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+                        }
+                        return null;
+                    }
+                    function parseNumericDate(mmStr, ddStr, yyyyStr) {
+                        let mm = parseInt(mmStr, 10), dd = parseInt(ddStr, 10), yyyy = parseInt(yyyyStr, 10);
+                        if (yyyy < 100) yyyy += 2000;
+                        if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+                            return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+                        }
+                        return null;
+                    }
+
+                    function findDateForward(searchText) {
                         const numeric = searchText.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
                         if (numeric) {
-                            let mm = parseInt(numeric[1], 10), dd = parseInt(numeric[2], 10), yyyy = parseInt(numeric[3], 10);
-                            if (yyyy < 100) yyyy += 2000;
-                            if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
-                                return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
-                            }
+                            const parsed = parseNumericDate(numeric[1], numeric[2], numeric[3]);
+                            if (parsed) return parsed;
                         }
-                        // Month-name form: "June 09, 2026" or "Jun 9 2026"
                         const named = searchText.match(/([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/);
                         if (named) {
-                            const monthKey = named[1].slice(0, 3).toLowerCase();
-                            const mm = MONTH_NAMES[monthKey];
-                            const dd = parseInt(named[2], 10);
-                            const yyyy = parseInt(named[3], 10);
-                            if (mm && dd >= 1 && dd <= 31) {
-                                return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
-                            }
+                            const parsed = parseNamedDate(named[1], named[2], named[3]);
+                            if (parsed) return parsed;
+                        }
+                        return null;
+                    }
+
+                    // Same reasoning as the location search above: this
+                    // template can put the date BEFORE the label. Take the
+                    // match closest to the label (the last one in the
+                    // backward-search text).
+                    function findDateBackward(searchText) {
+                        const namedMatches = [...searchText.matchAll(/([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/g)];
+                        if (namedMatches.length) {
+                            const last = namedMatches[namedMatches.length - 1];
+                            const parsed = parseNamedDate(last[1], last[2], last[3]);
+                            if (parsed) return parsed;
+                        }
+                        const numericMatches = [...searchText.matchAll(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/g)];
+                        if (numericMatches.length) {
+                            const last = numericMatches[numericMatches.length - 1];
+                            const parsed = parseNumericDate(last[1], last[2], last[3]);
+                            if (parsed) return parsed;
                         }
                         return null;
                     }
@@ -1676,9 +1731,16 @@
                         for (const pattern of labelPatterns) {
                             const m = pattern.exec(text);
                             if (m) {
+                                // Backward first - a large forward window can
+                                // accidentally reach past the pickup/delivery
+                                // table into unrelated text further down the
+                                // page (e.g. a "Printed on" footer date), and
+                                // grab the wrong date entirely.
+                                const back = findDateBackward(text.slice(Math.max(0, m.index - WINDOW), m.index));
+                                if (back) return back;
                                 const start = m.index + m[0].length;
-                                const found = findDate(text.slice(start, start + WINDOW));
-                                if (found) return found;
+                                const fwd = findDateForward(text.slice(start, start + WINDOW));
+                                if (fwd) return fwd;
                             }
                         }
                         return null;

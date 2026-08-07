@@ -1416,7 +1416,7 @@
             }
         }
 
-        function handlePageDrop(event) {
+        async function handlePageDrop(event) {
             event.preventDefault();
             pageDragCounter = 0;
             document.getElementById('pageDropOverlay').classList.remove('active');
@@ -1432,7 +1432,23 @@
             const dataTransfer = new DataTransfer();
             dataTransfer.items.add(file);
             document.getElementById('pdfFile').files = dataTransfer.files;
-            processPdfFile(file);
+
+            await processPdfFile(file);
+
+            // If extraction found everything required, skip the extra click
+            // and create the load right away - it'll show up on the home
+            // page immediately, and can still be edited from there if
+            // anything needs adjusting. If something's missing, leave the
+            // modal open (already pre-filled with whatever WAS found) so it
+            // can be completed manually instead of creating a blank/broken load.
+            const hasRequired = document.getElementById('pdfCarrierName').value.trim()
+                && document.getElementById('pdfRateConNumber').value.trim()
+                && document.getElementById('pdfPickupCity').value.trim()
+                && document.getElementById('pdfDeliveryCity').value.trim();
+
+            if (hasRequired) {
+                document.getElementById('pdfForm').requestSubmit();
+            }
         }
 
         document.addEventListener('dragover', handlePageDragOver);
@@ -1446,15 +1462,16 @@
             await processPdfFile(file);
         }
 
-        async function processPdfFile(file) {
+        function processPdfFile(file) {
             const statusDiv = document.getElementById('extractionStatus');
             statusDiv.className = 'extraction-status';
             statusDiv.textContent = 'Reading PDF…';
             statusDiv.style.display = 'block';
 
-            const reader = new FileReader();
+            return new Promise((resolve) => {
+                const reader = new FileReader();
 
-            reader.onload = async function(e) {
+                reader.onload = async function(e) {
                 try {
                     const pdf = await pdfjsLib.getDocument(e.target.result).promise;
                     const page = await pdf.getPage(1);
@@ -1852,29 +1869,55 @@
                         return null;
                     }
 
-                    let pickupTime = findLabeledTime(pickupDateLabels.concat([/Pick\s*-?\s*Up\s*Time[:\s]*/i])) || '';
-                    let deliveryTime = findLabeledTime(deliveryDateLabels.concat([/Delivery\s*Time[:\s]*/i])) || '';
+                    // A time note's PHYSICAL POSITION (which block it sits at
+                    // the bottom of) determines which leg it belongs to - not
+                    // the word printed in it. A note reading "DELIVER 8AM"
+                    // can still be the pickup time if it's positioned at the
+                    // bottom of the pickup block, before the real "Deliver"
+                    // section starts - dispatcher shorthand isn't always
+                    // literal. So instead of keying off "DELIVER"/"PICK UP"
+                    // wording, split the document into a pickup section
+                    // (everything from the carrier block up to the Deliver
+                    // label) and a delivery section (from the Deliver label
+                    // to the end), and take the last standalone time found
+                    // within each - "last" because that's the line closest
+                    // to that section's own boundary ("the bottom line").
+                    function getFirstLabelMatch(labelPatterns) {
+                        for (const pattern of labelPatterns) {
+                            const m = pattern.exec(text);
+                            if (m) return m;
+                        }
+                        return null;
+                    }
 
-                    // Fallback: a standalone appointment-time note like
-                    // "DELIVER 8AM" (or "8AM DELIVER") that sits apart from
-                    // the structured pickup/delivery block - only picked up
-                    // if a real time is actually present, per the template.
-                    if (!deliveryTime) {
-                        const afterMatch = text.match(/DELIVER(?:Y)?\s+(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/i);
-                        const beforeMatch = text.match(/(\d{1,2}(?::\d{2})?\s*(?:AM|PM))\s+DELIVER(?:Y)?\b/i);
-                        const noteMatch = afterMatch || beforeMatch;
-                        if (noteMatch) {
-                            deliveryTime = findTime(noteMatch[1]) || '';
-                        }
+                    const pickupLabelMatch = getFirstLabelMatch(pickupLabels);
+                    const deliveryLabelMatch = getFirstLabelMatch(deliveryLabels);
+                    const pickupSectionStart = contactMatch ? contactMatch.index : 0;
+                    const pickupSectionEnd = deliveryLabelMatch ? deliveryLabelMatch.index : text.length;
+                    const deliverySectionStart = deliveryLabelMatch ? deliveryLabelMatch.index : pickupSectionEnd;
+                    const pickupSectionText = text.slice(pickupSectionStart, pickupSectionEnd);
+                    const deliverySectionText = text.slice(deliverySectionStart);
+
+                    // Only standalone appointment times count - a note like
+                    // "YARD HOURS 8AM-3PM" is a facility hours range, not a
+                    // specific pickup/delivery time, so times immediately
+                    // next to a "-<time>" range separator are excluded.
+                    function findLastStandaloneTime(sectionText) {
+                        const matches = [...sectionText.matchAll(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM|am|pm)/g)];
+                        const standalone = matches.filter((m) => {
+                            const before = sectionText.slice(Math.max(0, m.index - 3), m.index);
+                            const after = sectionText.slice(m.index + m[0].length, m.index + m[0].length + 4);
+                            const precededByRange = /-\s*$/.test(before);
+                            const followedByRange = /^\s*-\s*\d/.test(after);
+                            return !precededByRange && !followedByRange;
+                        });
+                        if (!standalone.length) return null;
+                        const last = standalone[standalone.length - 1];
+                        return findTime(last[0]);
                     }
-                    if (!pickupTime) {
-                        const afterMatch = text.match(/PICK\s*-?\s*UP\s+(\d{1,2}(?::\d{2})?\s*(?:AM|PM))/i);
-                        const beforeMatch = text.match(/(\d{1,2}(?::\d{2})?\s*(?:AM|PM))\s+PICK\s*-?\s*UP\b/i);
-                        const noteMatch = afterMatch || beforeMatch;
-                        if (noteMatch) {
-                            pickupTime = findTime(noteMatch[1]) || '';
-                        }
-                    }
+
+                    let pickupTime = findLabeledTime([/Pick\s*-?\s*Up\s*Time[:\s]*/i]) || findLastStandaloneTime(pickupSectionText) || '';
+                    let deliveryTime = findLabeledTime([/Delivery\s*Time[:\s]*/i]) || findLastStandaloneTime(deliverySectionText) || '';
 
                     // Fill in the fields
                     if (carrierName) document.getElementById('pdfCarrierName').value = carrierName;
@@ -1904,14 +1947,17 @@
                     statusDiv.textContent = '✗ Could not extract PDF. Please fill in manually.';
                     statusDiv.className = 'extraction-status error';
                 }
-            };
+                resolve();
+                };
 
-            reader.onerror = function() {
-                statusDiv.textContent = '✗ Could not read the file. Please try again.';
-                statusDiv.className = 'extraction-status error';
-            };
+                reader.onerror = function() {
+                    statusDiv.textContent = '✗ Could not read the file. Please try again.';
+                    statusDiv.className = 'extraction-status error';
+                    resolve();
+                };
 
-            reader.readAsArrayBuffer(file);
+                reader.readAsArrayBuffer(file);
+            });
         }
 
         async function addLoad(e) {

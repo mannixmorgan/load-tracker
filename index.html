@@ -446,13 +446,14 @@
         }
 
         .load-card-collapsed {
-            padding: 18px 22px;
+            padding: 12px 20px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 20px;
+            gap: 16px;
             cursor: pointer;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
+            overflow-x: auto;
         }
 
         .load-card-collapsed:hover {
@@ -759,6 +760,8 @@
 
             .load-card-collapsed {
                 gap: 12px 20px;
+                flex-wrap: wrap;
+                overflow-x: visible;
             }
 
             .load-field.field-carrier,
@@ -878,7 +881,6 @@
 
             <div class="tab-bar" id="tabBar">
                 <button class="tab-btn active" data-tab="active" onclick="switchTab('active')">Active <span class="tab-count" id="tabCountActive"></span></button>
-                <button class="tab-btn" data-tab="delivered" onclick="switchTab('delivered')">Delivered <span class="tab-count" id="tabCountDelivered"></span></button>
                 <button class="tab-btn" data-tab="pod-received" onclick="switchTab('pod-received')">POD Received <span class="tab-count" id="tabCountPodReceived"></span></button>
             </div>
 
@@ -1382,6 +1384,7 @@
                     const page = await pdf.getPage(1);
                     const textContent = await page.getTextContent();
                     const text = textContent.items.map(item => item.str).join(' ');
+                    console.log('RAW PDF TEXT (for debugging extraction):', text);
 
                     let carrierName = '';
                     let carrierPhone = '';
@@ -1413,7 +1416,7 @@
                             before = before.slice(last.index + last[0].length);
                         }
 
-                        const nameMatch = before.match(/((?:[A-Za-z0-9&,.'-]+\s+){0,4}[A-Za-z0-9&,.'-]+)\s*\*?\s*$/);
+                        const nameMatch = before.match(/((?:[A-Za-z][A-Za-z0-9&,.'-]*\s+){0,4}[A-Za-z][A-Za-z0-9&,.'-]*)\s*\*?\s*$/);
                         if (nameMatch) {
                             carrierName = nameMatch[1].trim();
                         }
@@ -1479,14 +1482,16 @@
                         }
                     }
 
-                    // Rate con / order number - try several common label formats,
-                    // preferring ones explicitly about the rate confirmation over
-                    // generic PO/order numbers where possible.
+                    // Rate con / order number - try several common label formats.
+                    // The captured value must contain a digit, since some PDFs
+                    // have boilerplate disclaimer text like "...SIGNED RATE
+                    // CONFIRMATION SHEET..." that would otherwise false-match
+                    // and capture a plain word like "SHEET" instead of a number.
                     const rateConPatterns = [
-                        /Rate\s*Con(?:firmation)?\s*#?[:\s]*([A-Za-z0-9-]+)/i,
-                        /Load\s*#[:\s]*([A-Za-z0-9-]+)/i,
-                        /Confirmation\s*#[:\s]*([A-Za-z0-9-]+)/i,
-                        /Order\s*#[:\s]*([A-Za-z0-9-]+)/i
+                        /Order\s*#[:\s]*([A-Za-z0-9-]*\d[A-Za-z0-9-]*)/i,
+                        /Load\s*#[:\s]*([A-Za-z0-9-]*\d[A-Za-z0-9-]*)/i,
+                        /Rate\s*Con(?:firmation)?\s*#?[:\s]*([A-Za-z0-9-]*\d[A-Za-z0-9-]*)/i,
+                        /Confirmation\s*#[:\s]*([A-Za-z0-9-]*\d[A-Za-z0-9-]*)/i
                     ];
                     for (const pattern of rateConPatterns) {
                         const m = text.match(pattern);
@@ -1533,7 +1538,7 @@
                         /Ship\s*From[:\s]*/i
                     ];
                     const deliveryLabels = [
-                        /Deliver(?:y)?\s*(?:Location|Address)?[:\s]*/i,
+                        /Deliver(?:y)?\b(?!\s+\d{1,2}(?::\d{2})?\s*(?:AM|PM))\s*(?:Location|Address)?[:\s]*/i,
                         /Drop\s*-?\s*Off[:\s]*/i,
                         /Destination[:\s]*/i,
                         /Consignee[:\s]*/i,
@@ -1966,10 +1971,8 @@
             const container = document.getElementById('loadsContainer');
 
             const activeCount = loads.filter(l => MAIN_TAB_STAGES.includes(l.status)).length;
-            const deliveredCount = loads.filter(l => l.status === 'delivered').length;
             const podReceivedCount = loads.filter(l => l.status === 'pod-received').length;
             document.getElementById('tabCountActive').textContent = activeCount ? `(${activeCount})` : '';
-            document.getElementById('tabCountDelivered').textContent = deliveredCount ? `(${deliveredCount})` : '';
             document.getElementById('tabCountPodReceived').textContent = podReceivedCount ? `(${podReceivedCount})` : '';
 
             const visibleLoads = loads.filter((load) => {
@@ -1980,7 +1983,6 @@
             if (visibleLoads.length === 0) {
                 const emptyLabels = {
                     'active': ['📭', 'No Active Loads', 'Add your first load to get started'],
-                    'delivered': ['📦', 'No Delivered Loads', 'Loads marked Delivered will show up here'],
                     'pod-received': ['✅', 'No POD Received Loads', 'Loads marked POD Received will show up here']
                 };
                 const [icon, title, subtitle] = emptyLabels[currentTab];

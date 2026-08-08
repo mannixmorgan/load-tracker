@@ -922,13 +922,16 @@ header > div:first-child {
 </h1>
                     <p class="header-subtitle">Track active loads in real-time</p>
                 </div>
-                <div class="header-actions">
-                    <span class="signed-in-as" id="signedInAs"></span>
-                    <button class="signout-link" onclick="signOutUser()">Sign out</button>
-                    <button class="btn-primary" onclick="openAddLoadModal()">+ Add Load</button>
-                    <button class="btn-secondary" onclick="openPdfModal()">📄 PDF</button>
-                    <button class="btn-secondary" onclick="clearOldLoads()">Clean</button>
-                </div>
+                <div class="header-user">
+    <span class="signed-in-as" id="signedInAs"></span>
+    <button class="signout-link" onclick="signOutUser()">Sign out</button>
+</div>
+
+<div class="header-actions">
+    <button class="btn-primary" onclick="openAddLoadModal()">+ Add Load</button>
+    <button class="btn-secondary" onclick="openPdfModal()">📄 PDF</button>
+    <button class="btn-secondary" onclick="clearOldLoads()">Clean</button>
+</div>
             </header>
 
             <div class="tab-bar" id="tabBar">

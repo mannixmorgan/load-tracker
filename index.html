@@ -1631,7 +1631,7 @@
 
                     function findLabeledLocation(labelPatterns) {
                         for (const pattern of labelPatterns) {
-                            const m = pattern.exec(text);
+                            const m = pattern();
                             if (m) {
                                 // Try backward first - it's the correct
                                 // direction for the recurring template this
@@ -1650,18 +1650,59 @@
                         return null;
                     }
 
+                    // The bare "Pickup"/"Deliver" section headers can be
+                    // confused with unrelated notes containing the same word
+                    // (e.g. "DELIVER AT 8AM", "DELIVER 8AM" - dispatchers
+                    // phrase these inconsistently, so guessing every wording
+                    // variant is a losing game). Instead, verify structurally:
+                    // in this template the REAL header always has an actual
+                    // date sitting immediately before it, which a random
+                    // instructional note never does. Search every occurrence
+                    // of the word and pick the one a date actually precedes.
+                    function hasDateImmediatelyBefore(index) {
+                        const before = text.slice(Math.max(0, index - 40), index);
+                        return /([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})\s*$/.test(before)
+                            || /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\s*$/.test(before);
+                    }
+
+                    function hasDateAdjacent(matchIndex, matchEndIndex) {
+                        // Check forward too - date position relative to the
+                        // label isn't fully consistent even within this
+                        // broker's own template (confirmed against real
+                        // documents: some put "<date> ... Deliver", others
+                        // "Deliver <date> ...").
+                        const after = text.slice(matchEndIndex, matchEndIndex + 25);
+                        const dateAfter = /([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/.test(after)
+                            || /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/.test(after);
+                        return hasDateImmediatelyBefore(matchIndex) || dateAfter;
+                    }
+
+                    function verifiedWordMatcher(wordPattern) {
+                        return function() {
+                            const matches = [...text.matchAll(wordPattern)];
+                            for (const m of matches) {
+                                if (hasDateAdjacent(m.index, m.index + m[0].length)) return m;
+                            }
+                            return matches.length ? matches[0] : null;
+                        };
+                    }
+
+                    function plainMatcher(regex) {
+                        return function() { return regex.exec(text); };
+                    }
+
                     const pickupLabels = [
-                        /Pick\s*-?\s*Up\s*(?:Location|Address)?[:\s]*/i,
-                        /Origin[:\s]*/i,
-                        /Shipper[:\s]*/i,
-                        /Ship\s*From[:\s]*/i
+                        verifiedWordMatcher(/Pick\s*-?\s*Up\b/gi),
+                        plainMatcher(/Origin[:\s]*/i),
+                        plainMatcher(/Shipper[:\s]*/i),
+                        plainMatcher(/Ship\s*From[:\s]*/i)
                     ];
                     const deliveryLabels = [
-                        /Deliver(?:y)?\b(?!\s+\d{1,2}(?::\d{2})?\s*(?:AM|PM))\s*(?:Location|Address)?[:\s]*/i,
-                        /Drop\s*-?\s*Off[:\s]*/i,
-                        /Destination[:\s]*/i,
-                        /Consignee[:\s]*/i,
-                        /Ship\s*To[:\s]*/i
+                        verifiedWordMatcher(/Deliver(?:y)?\b/gi),
+                        plainMatcher(/Drop\s*-?\s*Off[:\s]*/i),
+                        plainMatcher(/Destination[:\s]*/i),
+                        plainMatcher(/Consignee[:\s]*/i),
+                        plainMatcher(/Ship\s*To[:\s]*/i)
                     ];
 
                     // Strategy 1 (most reliable for this template): the very
@@ -1679,8 +1720,6 @@
                     // (e.g. "...SERVICES.COM  EL RENO, OK") can bleed into
                     // the captured city, or swallow "Carrier Confirmation"
                     // (mixed-case, so excluded by the case check) entirely.
-                    const routeCityStatePattern = /([A-Z][A-Z\s]*?),?\s+([A-Z]{2})(?=[\s,.]|$)/;
-
                     function findRouteCityBackward(searchText) {
                         for (let start = 0; start < searchText.length; start++) {
                             if (start !== 0 && searchText[start - 1] !== ' ') continue;
@@ -1808,9 +1847,13 @@
                         return null;
                     }
 
+                    function execLabel(pattern) {
+                        return typeof pattern === 'function' ? pattern() : pattern.exec(text);
+                    }
+
                     function findLabeledDate(labelPatterns) {
                         for (const pattern of labelPatterns) {
-                            const m = pattern.exec(text);
+                            const m = execLabel(pattern);
                             if (m) {
                                 // Backward first - a large forward window can
                                 // accidentally reach past the pickup/delivery
@@ -1884,13 +1927,12 @@
                     // to that section's own boundary ("the bottom line").
                     function getFirstLabelMatch(labelPatterns) {
                         for (const pattern of labelPatterns) {
-                            const m = pattern.exec(text);
+                            const m = execLabel(pattern);
                             if (m) return m;
                         }
                         return null;
                     }
 
-                    const pickupLabelMatch = getFirstLabelMatch(pickupLabels);
                     const deliveryLabelMatch = getFirstLabelMatch(deliveryLabels);
                     const pickupSectionStart = contactMatch ? contactMatch.index : 0;
                     const pickupSectionEnd = deliveryLabelMatch ? deliveryLabelMatch.index : text.length;
@@ -2330,11 +2372,6 @@
             if (parts.length !== 3 || parts.some(isNaN)) return null;
             const [y, m, d] = parts;
             return new Date(y, m - 1, d);
-        }
-
-        function formatDateShort(isoDate) {
-            const dt = parseIsoDateLocal(isoDate);
-            return dt ? dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
         }
 
         function formatDateWithWeekday(isoDate) {

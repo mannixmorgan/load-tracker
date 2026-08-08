@@ -14,7 +14,7 @@
             padding: 0;
             box-sizing: border-box;
         }
- 
+
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #1a3a52 0%, #0f2438 100%);
@@ -1912,19 +1912,27 @@
                         return null;
                     }
 
-                    // A time note's PHYSICAL POSITION (which block it sits at
-                    // the bottom of) determines which leg it belongs to - not
-                    // the word printed in it. A note reading "DELIVER 8AM"
-                    // can still be the pickup time if it's positioned at the
-                    // bottom of the pickup block, before the real "Deliver"
-                    // section starts - dispatcher shorthand isn't always
-                    // literal. So instead of keying off "DELIVER"/"PICK UP"
-                    // wording, split the document into a pickup section
-                    // (everything from the carrier block up to the Deliver
-                    // label) and a delivery section (from the Deliver label
-                    // to the end), and take the last standalone time found
-                    // within each - "last" because that's the line closest
-                    // to that section's own boundary ("the bottom line").
+                    // The optional pickup/delivery times live in the free-form
+                    // notes line at the bottom of each block. Two things make
+                    // this tricky, both confirmed against real documents:
+                    //
+                    // 1. ZONE MAPPING. pdf.js emits a block's bottom-note
+                    //    BEFORE that block's own label. So the note sitting
+                    //    in the text before the "Pickup" label is the PICKUP
+                    //    block's note, and the note between the "Pickup" and
+                    //    "Deliver" labels is the DELIVERY block's note. (This
+                    //    is the opposite of what raw reading order suggests -
+                    //    verified against the printed PDFs, where e.g. order
+                    //    8515's "DELIVER 8AM" is visibly the last line of the
+                    //    delivery block.)
+                    //
+                    // 2. NOTE CONTENT VARIES. That notes line holds arbitrary
+                    //    dispatcher text, so a time is only meaningful when
+                    //    the note actually says it's an appointment - "deliver
+                    //    at", "pick up at", "load time", "appointment set for",
+                    //    and so on. A bare time with no such wording (or a
+                    //    facility hours RANGE like "YARD HOURS 8AM-3PM") is
+                    //    not an appointment and is ignored.
                     function getFirstLabelMatch(labelPatterns) {
                         for (const pattern of labelPatterns) {
                             const m = execLabel(pattern);
@@ -1933,33 +1941,43 @@
                         return null;
                     }
 
+                    const pickupLabelMatch = getFirstLabelMatch(pickupLabels);
                     const deliveryLabelMatch = getFirstLabelMatch(deliveryLabels);
-                    const pickupSectionStart = contactMatch ? contactMatch.index : 0;
-                    const pickupSectionEnd = deliveryLabelMatch ? deliveryLabelMatch.index : text.length;
-                    const deliverySectionStart = deliveryLabelMatch ? deliveryLabelMatch.index : pickupSectionEnd;
-                    const pickupSectionText = text.slice(pickupSectionStart, pickupSectionEnd);
-                    const deliverySectionText = text.slice(deliverySectionStart);
+                    const pickupNoteZone = text.slice(
+                        contactMatch ? contactMatch.index : 0,
+                        pickupLabelMatch ? pickupLabelMatch.index : text.length
+                    );
+                    const deliveryNoteZone = pickupLabelMatch && deliveryLabelMatch
+                        ? text.slice(pickupLabelMatch.index, deliveryLabelMatch.index)
+                        : '';
 
-                    // Only standalone appointment times count - a note like
-                    // "YARD HOURS 8AM-3PM" is a facility hours range, not a
-                    // specific pickup/delivery time, so times immediately
-                    // next to a "-<time>" range separator are excluded.
-                    function findLastStandaloneTime(sectionText) {
-                        const matches = [...sectionText.matchAll(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM|am|pm)/g)];
-                        const standalone = matches.filter((m) => {
-                            const before = sectionText.slice(Math.max(0, m.index - 3), m.index);
-                            const after = sectionText.slice(m.index + m[0].length, m.index + m[0].length + 4);
-                            const precededByRange = /-\s*$/.test(before);
-                            const followedByRange = /^\s*-\s*\d/.test(after);
-                            return !precededByRange && !followedByRange;
-                        });
-                        if (!standalone.length) return null;
-                        const last = standalone[standalone.length - 1];
-                        return findTime(last[0]);
+                    // Wording that marks a time as an actual appointment.
+                    // Kept broad on purpose - dispatchers phrase these many
+                    // different ways, and requiring SOME appointment wording
+                    // is what separates a real time from an incidental one.
+                    const APPOINTMENT_KEYWORDS = /(deliver|delivery|drop|unload|pick\s*-?\s*up|pickup|load|loading|appt|appointment|set\s+for|arriv|check\s*-?\s*in|ready|time|@)/i;
+
+                    function findAppointmentTime(zoneText) {
+                        const matches = [...zoneText.matchAll(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM|am|pm)/g)];
+                        // Walk backwards - the appointment note is the last
+                        // line of the block, so the latest match wins.
+                        for (let i = matches.length - 1; i >= 0; i--) {
+                            const m = matches[i];
+                            const before = zoneText.slice(Math.max(0, m.index - 3), m.index);
+                            const after = zoneText.slice(m.index + m[0].length, m.index + m[0].length + 4);
+                            // Skip either end of an hours range ("8AM-3PM").
+                            if (/-\s*$/.test(before)) continue;
+                            if (/^\s*-\s*\d/.test(after)) continue;
+                            // Require appointment wording near the time.
+                            const context = zoneText.slice(Math.max(0, m.index - 40), m.index);
+                            if (!APPOINTMENT_KEYWORDS.test(context)) continue;
+                            return findTime(m[0]);
+                        }
+                        return null;
                     }
 
-                    let pickupTime = findLabeledTime([/Pick\s*-?\s*Up\s*Time[:\s]*/i]) || findLastStandaloneTime(pickupSectionText) || '';
-                    let deliveryTime = findLabeledTime([/Delivery\s*Time[:\s]*/i]) || findLastStandaloneTime(deliverySectionText) || '';
+                    let pickupTime = findLabeledTime([/Pick\s*-?\s*Up\s*Time[:\s]*/i]) || findAppointmentTime(pickupNoteZone) || '';
+                    let deliveryTime = findLabeledTime([/Delivery\s*Time[:\s]*/i]) || findAppointmentTime(deliveryNoteZone) || '';
 
                     // Fill in the fields
                     if (carrierName) document.getElementById('pdfCarrierName').value = carrierName;

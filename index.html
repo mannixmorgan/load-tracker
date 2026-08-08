@@ -423,6 +423,51 @@
             font-weight: 600;
         }
 
+        .sort-control {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sort-control label {
+            margin: 0;
+            color: rgba(255, 255, 255, 0.75);
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .sort-control select {
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 13px;
+            font-weight: 700;
+            font-family: inherit;
+            cursor: pointer;
+        }
+
+        .sort-control select:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        .sort-control select:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.25);
+        }
+
+        /* Dropdown options render on the OS layer, so they need dark text
+           on white - the white-on-transparent styling above only applies
+           to the closed control itself. */
+        .sort-control select option {
+            background: white;
+            color: #1a3a52;
+        }
+
         .loads-container {
             display: flex;
             flex-direction: column;
@@ -905,6 +950,14 @@
             <div class="tab-bar" id="tabBar">
                 <button class="tab-btn active" data-tab="active" onclick="switchTab('active')">Active <span class="tab-count" id="tabCountActive"></span></button>
                 <button class="tab-btn" data-tab="pod-received" onclick="switchTab('pod-received')">POD Received <span class="tab-count" id="tabCountPodReceived"></span></button>
+                <div class="sort-control">
+                    <label for="sortSelect">Sort by</label>
+                    <select id="sortSelect" onchange="changeSort(this.value)">
+                        <option value="rateCon">Rate Con # (newest first)</option>
+                        <option value="pickupDate">Pickup date (soonest first)</option>
+                        <option value="deliveryDate">Delivery date (soonest first)</option>
+                    </select>
+                </div>
             </div>
 
             <div class="loads-container" id="loadsContainer">
@@ -1180,6 +1233,7 @@
         let editingLoadId = null;
         let expandedLoadId = null;
         let currentTab = 'active';
+        let currentSort = 'rateCon';
 
         function switchTab(tab) {
             currentTab = tab;
@@ -1187,6 +1241,64 @@
                 btn.classList.toggle('active', btn.dataset.tab === tab);
             });
             renderLoads();
+        }
+
+        function changeSort(sort) {
+            currentSort = sort;
+            renderLoads();
+        }
+
+        // ── Sorting ──────────────────────────────────────────────────
+        // Default order is rate con number, highest first. Rate cons from
+        // the usual template are plain numbers, but compare numerically so
+        // "9" doesn't sort above "8895". For values carrying a prefix, use
+        // the LAST run of digits ("RC-8896" -> 8896, sorting next to 8895)
+        // rather than every digit mashed together, which would turn
+        // "RC-2024-001" into 2024001 and float it to the top.
+        function rateConSortValue(raw) {
+            const groups = String(raw || '').match(/\d+/g);
+            if (!groups || !groups.length) return null;
+            const value = parseInt(groups[groups.length - 1], 10);
+            return isNaN(value) ? null : value;
+        }
+
+        function compareRateConDesc(a, b) {
+            const rawA = String(a.rateConNumber || '');
+            const rawB = String(b.rateConNumber || '');
+            const numA = rateConSortValue(rawA);
+            const numB = rateConSortValue(rawB);
+
+            if (numA !== null && numB !== null && numA !== numB) return numB - numA;
+            if (numA !== null && numB === null) return -1;
+            if (numA === null && numB !== null) return 1;
+            return rawB.localeCompare(rawA, undefined, { numeric: true });
+        }
+
+        // Dates are stored as YYYY-MM-DD, so a plain string compare is
+        // already chronological. Loads with no date sort to the bottom
+        // rather than the top, so a blank date never buries active work.
+        function compareByDateAsc(field) {
+            return function (a, b) {
+                const valA = a[field] || '';
+                const valB = b[field] || '';
+                if (!valA && !valB) return compareRateConDesc(a, b);
+                if (!valA) return 1;
+                if (!valB) return -1;
+                if (valA !== valB) return valA < valB ? -1 : 1;
+                return compareRateConDesc(a, b);
+            };
+        }
+
+        function sortLoads(list) {
+            const sorted = [...list];
+            if (currentSort === 'pickupDate') {
+                sorted.sort(compareByDateAsc('pickupDate'));
+            } else if (currentSort === 'deliveryDate') {
+                sorted.sort(compareByDateAsc('deliveryDate'));
+            } else {
+                sorted.sort(compareRateConDesc);
+            }
+            return sorted;
         }
 
         // ── Firestore helpers ────────────────────────────────────────
@@ -1211,7 +1323,7 @@
             loadsUnsubscribe = db.collection('loads').onSnapshot(
                 (snapshot) => {
                     loads = snapshot.docs.map((doc) => doc.data()).filter(isLoadFresh);
-                    loads.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                    // Ordering is applied at render time via sortLoads().
                     renderLoads();
                 },
                 (err) => {
@@ -2285,10 +2397,10 @@
             document.getElementById('tabCountActive').textContent = activeCount ? `(${activeCount})` : '';
             document.getElementById('tabCountPodReceived').textContent = podReceivedCount ? `(${podReceivedCount})` : '';
 
-            const visibleLoads = loads.filter((load) => {
+            const visibleLoads = sortLoads(loads.filter((load) => {
                 if (currentTab === 'active') return MAIN_TAB_STAGES.includes(load.status);
                 return load.status === currentTab;
-            });
+            }));
 
             if (visibleLoads.length === 0) {
                 const emptyLabels = {

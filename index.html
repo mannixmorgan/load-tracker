@@ -177,6 +177,35 @@ header > div:first-child {
     font-weight: 700;
 }
 
+.main-title {
+    position: relative;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.title-text {
+    display: inline-block;
+}
+
+.company-name {
+    font-size: 20px;
+    color: #666;
+    font-weight: 700;
+}
+
+.title-divider {
+    color: #bbb;
+    margin: 0 6px;
+}
+
+.main-title .truck-icon {
+    position: absolute;
+    right: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    margin-right: 10px;
+}
+
 .company-name {
     font-size: 20px;
     color: #666;
@@ -884,11 +913,13 @@ header > div:first-child {
     <!-- Sign In Screen -->
 <div class="password-screen" id="passwordScreen" style="display: none;">
     <div class="password-container">
-        <h1>
+        <h1 class="main-title">
+    <span class="title-text">
+        <span class="company-name">SMES</span>
+        <span class="title-divider">|</span>
+        Load Tracker
+    </span>
     <img class="truck-icon" src="load-tracker-truck.png" alt="Truck">
-    <span class="company-name">SMES</span>
-    <span class="title-divider">|</span>
-    Load Tracker
 </h1>
         <p>Sign in to access</p>
 

@@ -279,6 +279,49 @@
             font-size: 12px;
         }
 
+        /* Board display controls (auto scroll + sort) grouped on the right
+           of the tab row, where there's real width - the header column is
+           only a third of the page and was squeezing these out of sight. */
+        .board-controls {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        /* Clearly signal that wallboard mode is running - on a projector
+           across the room, the colour change reads at a glance. */
+        #autoScrollBtn.scrolling {
+            background: #26A69A;
+            color: white;
+        }
+
+        #autoScrollBtn.scrolling:hover {
+            background: #1f8e83;
+        }
+
+        #autoScrollSpeed {
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 13px;
+            font-weight: 700;
+            font-family: inherit;
+            cursor: pointer;
+        }
+
+        #autoScrollSpeed:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        #autoScrollSpeed option {
+            background: white;
+            color: #1a3a52;
+        }
+
         .modal {
             display: none;
             position: fixed;
@@ -476,7 +519,6 @@
         }
 
         .sort-control {
-            margin-left: auto;
             display: flex;
             align-items: center;
             gap: 8px;
@@ -983,13 +1025,21 @@
                 <button class="tab-btn active" data-tab="active" onclick="switchTab('active')">Active <span class="tab-count" id="tabCountActive"></span></button>
                 <button class="tab-btn" data-tab="delivered" onclick="switchTab('delivered')">Delivered <span class="tab-count" id="tabCountDelivered"></span></button>
                 <button class="tab-btn" data-tab="pod-received" onclick="switchTab('pod-received')">POD Received <span class="tab-count" id="tabCountPodReceived"></span></button>
-                <div class="sort-control">
-                    <label for="sortSelect">Sort by</label>
-                    <select id="sortSelect" onchange="changeSort(this.value)">
-                        <option value="rateCon">Rate Con # (newest first)</option>
-                        <option value="pickupDate">Pickup date (soonest first)</option>
-                        <option value="deliveryDate">Delivery date (soonest first)</option>
+                <div class="board-controls">
+                    <button class="tab-btn" id="autoScrollBtn" onclick="toggleAutoScroll()">▶ Auto Scroll</button>
+                    <select id="autoScrollSpeed" title="Auto scroll speed">
+                        <option value="15">Slow</option>
+                        <option value="30" selected>Medium</option>
+                        <option value="60">Fast</option>
                     </select>
+                    <div class="sort-control">
+                        <label for="sortSelect">Sort by</label>
+                        <select id="sortSelect" onchange="changeSort(this.value)">
+                            <option value="rateCon">Rate Con # (newest first)</option>
+                            <option value="pickupDate">Pickup date (soonest first)</option>
+                            <option value="deliveryDate">Delivery date (soonest first)</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 
@@ -1278,6 +1328,104 @@
         function changeSort(sort) {
             currentSort = sort;
             renderLoads();
+        }
+
+        // ── Auto-scroll (wallboard / projector mode) ──────────────────
+        // ── Auto-scroll (wallboard / projector mode) ──────────────────
+        // Slowly scrolls the whole board top to bottom, pauses so the last
+        // rows can be read, then loops back to the top and repeats.
+        const AUTO_SCROLL_PAUSE_MS = 3000;   // dwell at the bottom before looping
+
+        let autoScrollActive = false;
+        let autoScrollFrame = null;
+        let autoScrollPos = 0;
+        let autoScrollResumeAt = 0;
+        let autoScrollLastTs = null;
+
+        function getAutoScrollSpeed() {
+            const sel = document.getElementById('autoScrollSpeed');
+            return sel ? parseInt(sel.value, 10) : 25;
+        }
+
+        function getMaxScroll() {
+            return Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+        }
+
+        function autoScrollStep(timestamp) {
+            if (!autoScrollActive) return;
+
+            if (autoScrollLastTs === null) autoScrollLastTs = timestamp;
+            // Seconds since the last frame. Driving movement by elapsed TIME
+            // rather than per-frame steps keeps the speed identical on a
+            // 60Hz projector and a 120Hz laptop screen.
+            const dt = Math.min((timestamp - autoScrollLastTs) / 1000, 0.1);
+            autoScrollLastTs = timestamp;
+
+            const maxScroll = getMaxScroll();
+
+            // Nothing to scroll (everything already fits on screen).
+            if (maxScroll <= 0) {
+                autoScrollFrame = requestAnimationFrame(autoScrollStep);
+                return;
+            }
+
+            if (Date.now() < autoScrollResumeAt) {
+                autoScrollFrame = requestAnimationFrame(autoScrollStep);
+                return;
+            }
+
+            // Hold still while a modal is open - otherwise the board crawls
+            // along behind the form someone is trying to fill in.
+            if (document.querySelector('.modal.active')) {
+                autoScrollPos = window.scrollY;
+                autoScrollFrame = requestAnimationFrame(autoScrollStep);
+                return;
+            }
+
+            // If someone scrolled by hand (or the list re-rendered and moved
+            // things), adopt their position instead of yanking the page back.
+            if (Math.abs(window.scrollY - autoScrollPos) > 5) {
+                autoScrollPos = window.scrollY;
+            }
+
+            autoScrollPos += getAutoScrollSpeed() * dt;
+
+            if (autoScrollPos >= maxScroll) {
+                // Hit the bottom: rest there, then jump back to the top.
+                window.scrollTo(0, maxScroll);
+                autoScrollPos = 0;
+                autoScrollResumeAt = Date.now() + AUTO_SCROLL_PAUSE_MS;
+                setTimeout(() => {
+                    if (autoScrollActive) window.scrollTo(0, 0);
+                }, AUTO_SCROLL_PAUSE_MS);
+            } else {
+                // Fractional position scrolled every frame - this is what
+                // makes the crawl look smooth instead of stepping 1px at a time.
+                window.scrollTo(0, autoScrollPos);
+            }
+
+            autoScrollFrame = requestAnimationFrame(autoScrollStep);
+        }
+
+        function toggleAutoScroll() {
+            autoScrollActive = !autoScrollActive;
+            const btn = document.getElementById('autoScrollBtn');
+            btn.classList.toggle('scrolling', autoScrollActive);
+            btn.textContent = autoScrollActive ? '⏸ Stop Scroll' : '▶ Auto Scroll';
+
+            if (autoScrollActive) {
+                // Say so plainly rather than appearing to do nothing.
+                if (getMaxScroll() <= 0) {
+                    alert('Nothing to scroll yet - all the loads already fit on screen.');
+                }
+                autoScrollPos = window.scrollY;
+                autoScrollLastTs = null;
+                autoScrollResumeAt = 0; // start moving right away
+                autoScrollFrame = requestAnimationFrame(autoScrollStep);
+            } else {
+                if (autoScrollFrame) cancelAnimationFrame(autoScrollFrame);
+                autoScrollFrame = null;
+            }
         }
 
         // ── Sorting ──────────────────────────────────────────────────

@@ -981,6 +981,7 @@
 
             <div class="tab-bar" id="tabBar">
                 <button class="tab-btn active" data-tab="active" onclick="switchTab('active')">Active <span class="tab-count" id="tabCountActive"></span></button>
+                <button class="tab-btn" data-tab="delivered" onclick="switchTab('delivered')">Delivered <span class="tab-count" id="tabCountDelivered"></span></button>
                 <button class="tab-btn" data-tab="pod-received" onclick="switchTab('pod-received')">POD Received <span class="tab-count" id="tabCountPodReceived"></span></button>
                 <div class="sort-control">
                     <label for="sortSelect">Sort by</label>
@@ -1246,11 +1247,10 @@
             'pod-received': 'POD Received'
         };
         const MAX_LOAD_AGE_DAYS = 7;
+        // Each tab owns a distinct set of stages, so a load lives in exactly
+        // one tab and moves along as its status advances.
         const ACTIVE_STAGES = ['dispatched', 'loading', 'in-transit', 'unloading'];
-        // Delivered loads stay visible on the main tab (not just the
-        // Delivered tab) - only POD Received is the true "done, archived"
-        // state that leaves the main view.
-        const MAIN_TAB_STAGES = ACTIVE_STAGES.concat(['delivered']);
+        const MAIN_TAB_STAGES = ACTIVE_STAGES;
 
         // Valid US state abbreviations
         const VALID_STATES = [
@@ -2425,8 +2425,10 @@
             const container = document.getElementById('loadsContainer');
 
             const activeCount = loads.filter(l => MAIN_TAB_STAGES.includes(l.status)).length;
+            const deliveredCount = loads.filter(l => l.status === 'delivered').length;
             const podReceivedCount = loads.filter(l => l.status === 'pod-received').length;
             document.getElementById('tabCountActive').textContent = activeCount ? `(${activeCount})` : '';
+            document.getElementById('tabCountDelivered').textContent = deliveredCount ? `(${deliveredCount})` : '';
             document.getElementById('tabCountPodReceived').textContent = podReceivedCount ? `(${podReceivedCount})` : '';
 
             const visibleLoads = sortLoads(loads.filter((load) => {
@@ -2437,6 +2439,7 @@
             if (visibleLoads.length === 0) {
                 const emptyLabels = {
                     'active': ['📭', 'No Active Loads', 'Add your first load to get started'],
+                    'delivered': ['📦', 'No Delivered Loads', 'Loads marked Delivered will show up here'],
                     'pod-received': ['✅', 'No POD Received Loads', 'Loads marked POD Received will show up here']
                 };
                 const [icon, title, subtitle] = emptyLabels[currentTab];

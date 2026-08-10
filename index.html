@@ -45,15 +45,6 @@
             font-size: 28px;
         }
 
-        /* The sign-in card is only 400px wide, so a truck hanging off the
-           left of the title would spill outside it. Stack it above instead. */
-        .password-container .main-title .truck-icon {
-            position: static;
-            transform: none;
-            display: block;
-            margin: 0 auto 8px;
-        }
-
         .password-container p {
             color: #666;
             margin-bottom: 30px;
@@ -145,10 +136,6 @@
             margin: 0 auto;
         }
 
-        /* Three columns with EQUAL side columns, so the middle one is
-           mathematically dead center. minmax(0, 1fr) matters: a plain 1fr
-           won't shrink below its content, so a wide button group on the
-           right would otherwise push the title off center. */
         header {
             background: white;
             padding: 20px 25px;
@@ -156,9 +143,55 @@
             margin-bottom: 20px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             display: grid;
-            grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+            grid-template-columns: 1fr auto 1fr;
             align-items: center;
+            min-height: 100px;
+            position: relative;
             gap: 15px;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 28px;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .header-title {
+            grid-column: 2;
+            text-align: center;
+            position: relative;
+        }
+
+        .header-title h1 {
+            position: relative;
+            white-space: nowrap;
+        }
+
+        .title-text {
+            display: inline-block;
+        }
+
+        .company-name {
+            font-size: 20px;
+            color: #666;
+            font-weight: 700;
+        }
+
+        .title-divider {
+            color: #bbb;
+            margin: 0 6px;
+        }
+
+        .header-title .header-truck-icon {
+            position: absolute;
+            right: 100%;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 75px;
+            height: 45px;
+            object-fit: contain;
+            margin-right: 10px;
         }
 
         .header-user {
@@ -167,13 +200,15 @@
             display: flex;
             flex-direction: column;
             align-items: flex-start;
-            gap: 4px;
+            gap: 2px;
         }
 
-        .header-title {
-            grid-column: 2;
-            justify-self: center;
-            text-align: center;
+        .header-subtitle {
+            color: #999;
+            margin-top: 2px;
+            font-size: 14px;
+            font-weight: 600;
+            width: 100%;
         }
 
         .header-actions {
@@ -184,42 +219,6 @@
             flex-wrap: wrap;
             align-items: center;
             justify-content: flex-end;
-        }
-
-        h1 {
-            color: #333;
-            font-size: 28px;
-            font-weight: 700;
-        }
-
-        /* inline-block so the box hugs the text - that's what the truck
-           anchors against. white-space: nowrap keeps the title on one line
-           so "dead center" stays meaningful. */
-        .main-title {
-            position: relative;
-            display: inline-block;
-            white-space: nowrap;
-        }
-
-        /* Pulled out of the text flow entirely, so it sits to the LEFT of
-           the words without shifting them off center. */
-        .main-title .truck-icon {
-            position: absolute;
-            right: 100%;
-            top: 50%;
-            transform: translateY(-50%);
-            margin-right: 10px;
-        }
-
-        .company-name {
-            color: #1a3a52;
-        }
-
-        .header-subtitle {
-            color: #999;
-            margin-top: 2px;
-            font-size: 14px;
-            font-weight: 600;
         }
 
         .signed-in-as {
@@ -277,49 +276,6 @@
         .btn-small {
             padding: 8px 14px;
             font-size: 12px;
-        }
-
-        /* Board display controls (auto scroll + sort) grouped on the right
-           of the tab row, where there's real width - the header column is
-           only a third of the page and was squeezing these out of sight. */
-        .board-controls {
-            margin-left: auto;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        /* Clearly signal that wallboard mode is running - on a projector
-           across the room, the colour change reads at a glance. */
-        #autoScrollBtn.scrolling {
-            background: #26A69A;
-            color: white;
-        }
-
-        #autoScrollBtn.scrolling:hover {
-            background: #1f8e83;
-        }
-
-        #autoScrollSpeed {
-            background: rgba(255, 255, 255, 0.15);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            padding: 10px 12px;
-            font-size: 13px;
-            font-weight: 700;
-            font-family: inherit;
-            cursor: pointer;
-        }
-
-        #autoScrollSpeed:hover {
-            background: rgba(255, 255, 255, 0.25);
-        }
-
-        #autoScrollSpeed option {
-            background: white;
-            color: #1a3a52;
         }
 
         .modal {
@@ -519,6 +475,7 @@
         }
 
         .sort-control {
+            margin-left: auto;
             display: flex;
             align-items: center;
             gap: 8px;
@@ -899,20 +856,203 @@
         }
 
         .truck-icon {
-            width: 75px;
-            height: 45px;
+            width: 34px;
+            height: 20px;
             object-fit: contain;
             vertical-align: middle;
         }
 
+
+        /* ── Search / filter bar ─────────────────────────────────────── */
+        .search-filter-bar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .search-box-wrap {
+            flex: 1 1 320px;
+            position: relative;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 11px 42px 11px 14px;
+            border: 2px solid rgba(255, 255, 255, 0.18);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.12);
+            color: white;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: inherit;
+        }
+
+        .search-box::placeholder {
+            color: rgba(255, 255, 255, 0.68);
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: rgba(255, 255, 255, 0.45);
+            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+        }
+
+        .search-clear-btn {
+            position: absolute;
+            right: 6px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            border-radius: 6px;
+            background: transparent;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 18px;
+            display: none;
+        }
+
+        .search-clear-btn:hover {
+            background: rgba(255, 255, 255, 0.12);
+            color: white;
+        }
+
+        .filter-select {
+            padding: 11px 14px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+            font-size: 13px;
+            font-weight: 700;
+            font-family: inherit;
+            cursor: pointer;
+            min-width: 150px;
+        }
+
+        .filter-select option {
+            background: white;
+            color: #1a3a52;
+        }
+
+        .search-result-count {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 12px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        /* ── Manual exception / issue flag ───────────────────────────── */
+        .load-alert-icons {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            flex-shrink: 0;
+        }
+
+        .load-alert-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            font-size: 13px;
+            font-weight: 900;
+            line-height: 1;
+            cursor: help;
+        }
+
+        .load-alert-icon.issue {
+            background: #d32f2f;
+            color: white;
+            box-shadow: 0 0 0 2px rgba(211, 47, 47, 0.12);
+        }
+
+        .load-alert-icon.duplicate {
+            background: #f57c00;
+            color: white;
+            box-shadow: 0 0 0 2px rgba(245, 124, 0, 0.12);
+        }
+
+        .issue-section {
+            background: #fff5f5;
+            border: 1px solid #ffcdd2;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 12px;
+        }
+
+        .issue-section.has-issue {
+            border-color: #ef9a9a;
+        }
+
+        .issue-section-label {
+            font-weight: 800;
+            color: #b71c1c;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+            letter-spacing: 0.5px;
+        }
+
+        .issue-section-value {
+            color: #7f1d1d;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .issue-section-note {
+            color: #666;
+            font-size: 13px;
+            font-weight: 600;
+            margin-top: 5px;
+            white-space: pre-wrap;
+        }
+
+        .issue-btn {
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #ef9a9a;
+            padding: 8px 12px;
+            font-size: 12px;
+            font-weight: 800;
+            border-radius: 6px;
+            margin-top: 10px;
+        }
+
+        .issue-btn:hover {
+            background: #ffcdd2;
+        }
+
+        .issue-modal-note {
+            color: #777;
+            font-size: 13px;
+            font-weight: 600;
+            margin-top: -10px;
+            margin-bottom: 18px;
+        }
+
         @media (max-width: 768px) {
-            /* Single column - side-by-side doesn't fit, and the absolutely
-               positioned truck would hang off the edge of the card. */
+            .search-filter-bar {
+                align-items: stretch;
+            }
+
+            .filter-select {
+                flex: 1 1 150px;
+            }
+
+            .search-result-count {
+                width: 100%;
+            }
+        }
+
+        @media (max-width: 768px) {
             header {
                 grid-template-columns: 1fr;
-                justify-items: center;
                 text-align: center;
-                gap: 12px;
             }
 
             .header-user,
@@ -924,18 +1064,22 @@
 
             .header-user {
                 align-items: center;
+                order: 2;
+            }
+
+            .header-title {
+                order: 1;
             }
 
             .header-actions {
+                order: 3;
                 justify-content: center;
                 width: 100%;
             }
 
-            .main-title .truck-icon {
-                position: static;
-                transform: none;
-                display: block;
-                margin: 0 auto 6px;
+            .header-title .header-truck-icon {
+                width: 60px;
+                height: 38px;
             }
 
             .load-card-collapsed {
@@ -965,10 +1109,7 @@
     <!-- Sign In Screen -->
     <div class="password-screen" id="passwordScreen" style="display: none;">
         <div class="password-container">
-            <h1 class="main-title">
-                <img class="truck-icon" src="load-tracker-truck.png" alt="">
-                <span class="company-name">SMES</span> Load Tracker
-            </h1>
+            <h1><img class="truck-icon" src="load-tracker-truck.png" alt="Truck"> Load Tracker</h1>
             <p>Sign in to access</p>
 
             <input
@@ -1000,16 +1141,20 @@
     <!-- Main App -->
     <div class="app-container" id="appContainer">
         <div class="container">
-            <header>
+            <header class="app-header">
                 <div class="header-user">
                     <span class="signed-in-as" id="signedInAs"></span>
                     <button class="signout-link" onclick="signOutUser()">Sign out</button>
                 </div>
 
                 <div class="header-title">
-                    <h1 class="main-title">
-                        <img class="truck-icon" src="load-tracker-truck.png" alt="">
-                        <span class="company-name">SMES</span> Load Tracker
+                    <h1>
+                        <span class="title-text">
+                            <span class="company-name">SMES</span>
+                            <span class="title-divider">|</span>
+                            Load Tracker
+                        </span>
+                        <img class="truck-icon header-truck-icon" src="load-tracker-truck.png" alt="Truck">
                     </h1>
                     <p class="header-subtitle">Track active loads in real-time</p>
                 </div>
@@ -1023,24 +1168,35 @@
 
             <div class="tab-bar" id="tabBar">
                 <button class="tab-btn active" data-tab="active" onclick="switchTab('active')">Active <span class="tab-count" id="tabCountActive"></span></button>
-                <button class="tab-btn" data-tab="delivered" onclick="switchTab('delivered')">Delivered <span class="tab-count" id="tabCountDelivered"></span></button>
                 <button class="tab-btn" data-tab="pod-received" onclick="switchTab('pod-received')">POD Received <span class="tab-count" id="tabCountPodReceived"></span></button>
-                <div class="board-controls">
-                    <button class="tab-btn" id="autoScrollBtn" onclick="toggleAutoScroll()">▶ Auto Scroll</button>
-                    <select id="autoScrollSpeed" title="Auto scroll speed">
-                        <option value="15">Slow</option>
-                        <option value="30" selected>Medium</option>
-                        <option value="60">Fast</option>
+                <div class="sort-control">
+                    <label for="sortSelect">Sort by</label>
+                    <select id="sortSelect" onchange="changeSort(this.value)">
+                        <option value="rateCon">Rate Con # (newest first)</option>
+                        <option value="pickupDate">Pickup date (soonest first)</option>
+                        <option value="deliveryDate">Delivery date (soonest first)</option>
                     </select>
-                    <div class="sort-control">
-                        <label for="sortSelect">Sort by</label>
-                        <select id="sortSelect" onchange="changeSort(this.value)">
-                            <option value="rateCon">Rate Con # (newest first)</option>
-                            <option value="pickupDate">Pickup date (soonest first)</option>
-                            <option value="deliveryDate">Delivery date (soonest first)</option>
-                        </select>
-                    </div>
                 </div>
+            </div>
+
+            <div class="search-filter-bar">
+                <div class="search-box-wrap">
+                    <input
+                        type="text"
+                        id="loadSearch"
+                        class="search-box"
+                        placeholder="Search RC #, carrier, pickup, delivery, notes..."
+                        autocomplete="off"
+                        oninput="handleSearchInput()"
+                    >
+                    <button type="button" id="clearSearchBtn" class="search-clear-btn" onclick="clearSearch()" title="Clear search">&times;</button>
+                </div>
+                <select id="issueFilter" class="filter-select" onchange="changeIssueFilter(this.value)" aria-label="Filter loads">
+                    <option value="all">All Loads</option>
+                    <option value="issues">Flagged Issues</option>
+                    <option value="no-issues">No Issues</option>
+                </select>
+                <span class="search-result-count" id="searchResultCount"></span>
             </div>
 
             <div class="loads-container" id="loadsContainer">
@@ -1249,6 +1405,27 @@
                     <textarea id="editLoadNotes"></textarea>
                 </div>
 
+                <div class="form-group">
+                    <label for="editIssueType">Issue / Exception</label>
+                    <select id="editIssueType">
+                        <option value="">No issue</option>
+                        <option value="Truck breakdown">Truck breakdown</option>
+                        <option value="Mechanical issue">Mechanical issue</option>
+                        <option value="Accident / incident">Accident / incident</option>
+                        <option value="Driver issue">Driver issue</option>
+                        <option value="Weather">Weather</option>
+                        <option value="Traffic / road closure">Traffic / road closure</option>
+                        <option value="Pickup delay">Pickup delay</option>
+                        <option value="Delivery delay">Delivery delay</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="editIssueNote">Issue Details (Optional)</label>
+                    <textarea id="editIssueNote" placeholder="e.g., Truck broke down near Amarillo. Carrier expects repair by 4 PM."></textarea>
+                </div>
+
                 <div class="form-actions">
                     <button type="button" class="btn-secondary" onclick="closeModal('editLoadModal')">Cancel</button>
                     <button type="submit" class="btn-primary">Save</button>
@@ -1297,10 +1474,11 @@
             'pod-received': 'POD Received'
         };
         const MAX_LOAD_AGE_DAYS = 7;
-        // Each tab owns a distinct set of stages, so a load lives in exactly
-        // one tab and moves along as its status advances.
         const ACTIVE_STAGES = ['dispatched', 'loading', 'in-transit', 'unloading'];
-        const MAIN_TAB_STAGES = ACTIVE_STAGES;
+        // Delivered loads stay visible on the main tab (not just the
+        // Delivered tab) - only POD Received is the true "done, archived"
+        // state that leaves the main view.
+        const MAIN_TAB_STAGES = ACTIVE_STAGES.concat(['delivered']);
 
         // Valid US state abbreviations
         const VALID_STATES = [
@@ -1316,6 +1494,8 @@
         let expandedLoadId = null;
         let currentTab = 'active';
         let currentSort = 'rateCon';
+        let currentSearch = '';
+        let currentIssueFilter = 'all';
 
         function switchTab(tab) {
             currentTab = tab;
@@ -1330,102 +1510,49 @@
             renderLoads();
         }
 
-        // ── Auto-scroll (wallboard / projector mode) ──────────────────
-        // ── Auto-scroll (wallboard / projector mode) ──────────────────
-        // Slowly scrolls the whole board top to bottom, pauses so the last
-        // rows can be read, then loops back to the top and repeats.
-        const AUTO_SCROLL_PAUSE_MS = 3000;   // dwell at the bottom before looping
-
-        let autoScrollActive = false;
-        let autoScrollFrame = null;
-        let autoScrollPos = 0;
-        let autoScrollResumeAt = 0;
-        let autoScrollLastTs = null;
-
-        function getAutoScrollSpeed() {
-            const sel = document.getElementById('autoScrollSpeed');
-            return sel ? parseInt(sel.value, 10) : 25;
+        function handleSearchInput() {
+            currentSearch = document.getElementById('loadSearch').value.trim().toLowerCase();
+            const clearBtn = document.getElementById('clearSearchBtn');
+            if (clearBtn) clearBtn.style.display = currentSearch ? 'block' : 'none';
+            renderLoads();
         }
 
-        function getMaxScroll() {
-            return Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+        function clearSearch() {
+            const input = document.getElementById('loadSearch');
+            if (input) input.value = '';
+            currentSearch = '';
+            const clearBtn = document.getElementById('clearSearchBtn');
+            if (clearBtn) clearBtn.style.display = 'none';
+            renderLoads();
+            if (input) input.focus();
         }
 
-        function autoScrollStep(timestamp) {
-            if (!autoScrollActive) return;
-
-            if (autoScrollLastTs === null) autoScrollLastTs = timestamp;
-            // Seconds since the last frame. Driving movement by elapsed TIME
-            // rather than per-frame steps keeps the speed identical on a
-            // 60Hz projector and a 120Hz laptop screen.
-            const dt = Math.min((timestamp - autoScrollLastTs) / 1000, 0.1);
-            autoScrollLastTs = timestamp;
-
-            const maxScroll = getMaxScroll();
-
-            // Nothing to scroll (everything already fits on screen).
-            if (maxScroll <= 0) {
-                autoScrollFrame = requestAnimationFrame(autoScrollStep);
-                return;
-            }
-
-            if (Date.now() < autoScrollResumeAt) {
-                autoScrollFrame = requestAnimationFrame(autoScrollStep);
-                return;
-            }
-
-            // Hold still while a modal is open - otherwise the board crawls
-            // along behind the form someone is trying to fill in.
-            if (document.querySelector('.modal.active')) {
-                autoScrollPos = window.scrollY;
-                autoScrollFrame = requestAnimationFrame(autoScrollStep);
-                return;
-            }
-
-            // If someone scrolled by hand (or the list re-rendered and moved
-            // things), adopt their position instead of yanking the page back.
-            if (Math.abs(window.scrollY - autoScrollPos) > 5) {
-                autoScrollPos = window.scrollY;
-            }
-
-            autoScrollPos += getAutoScrollSpeed() * dt;
-
-            if (autoScrollPos >= maxScroll) {
-                // Hit the bottom: rest there, then jump back to the top.
-                window.scrollTo(0, maxScroll);
-                autoScrollPos = 0;
-                autoScrollResumeAt = Date.now() + AUTO_SCROLL_PAUSE_MS;
-                setTimeout(() => {
-                    if (autoScrollActive) window.scrollTo(0, 0);
-                }, AUTO_SCROLL_PAUSE_MS);
-            } else {
-                // Fractional position scrolled every frame - this is what
-                // makes the crawl look smooth instead of stepping 1px at a time.
-                window.scrollTo(0, autoScrollPos);
-            }
-
-            autoScrollFrame = requestAnimationFrame(autoScrollStep);
+        function changeIssueFilter(filter) {
+            currentIssueFilter = filter;
+            renderLoads();
         }
 
-        function toggleAutoScroll() {
-            autoScrollActive = !autoScrollActive;
-            const btn = document.getElementById('autoScrollBtn');
-            btn.classList.toggle('scrolling', autoScrollActive);
-            btn.textContent = autoScrollActive ? '⏸ Stop Scroll' : '▶ Auto Scroll';
+        function loadMatchesSearch(load) {
+            if (!currentSearch) return true;
+            const haystack = [
+                load.rateConNumber,
+                load.carrierName,
+                load.carrierPhone,
+                load.pickupCity,
+                load.pickupDate,
+                load.deliveryCity,
+                load.deliveryDate,
+                load.loadNotes,
+                load.issue,
+                load.issueNote
+            ].filter(Boolean).join(' ').toLowerCase();
+            return haystack.includes(currentSearch);
+        }
 
-            if (autoScrollActive) {
-                // Say so plainly rather than appearing to do nothing.
-                if (getMaxScroll() <= 0) {
-                    alert('Nothing to scroll yet - all the loads already fit on screen.');
-                }
-                autoScrollPos = window.scrollY;
-                autoScrollLastTs = null;
-                autoScrollResumeAt = 0; // start moving right away
-                autoScrollFrame = requestAnimationFrame(autoScrollStep);
-            } else {
-                if (autoScrollFrame) cancelAnimationFrame(autoScrollFrame);
-                autoScrollFrame = null;
-            }
+        function loadMatchesIssueFilter(load) {
+            if (currentIssueFilter === 'issues') return !!load.issue;
+            if (currentIssueFilter === 'no-issues') return !load.issue;
+            return true;
         }
 
         // ── Sorting ──────────────────────────────────────────────────
@@ -1502,7 +1629,14 @@
             if (loadsUnsubscribe) return;
             loadsUnsubscribe = db.collection('loads').onSnapshot(
                 (snapshot) => {
-                    loads = snapshot.docs.map((doc) => doc.data()).filter(isLoadFresh);
+                    loads = snapshot.docs.map((doc) => {
+                        const load = doc.data();
+                        return {
+                            ...load,
+                            issue: load.issue || '',
+                            issueNote: load.issueNote || ''
+                        };
+                    }).filter(isLoadFresh);
                     // Ordering is applied at render time via sortLoads().
                     renderLoads();
                 },
@@ -1739,6 +1873,12 @@
                 && document.getElementById('pdfDeliveryCity').value.trim();
 
             if (hasRequired) {
+                const extractedRateCon = document.getElementById('pdfRateConNumber').value.trim();
+                const duplicate = findDuplicateRateCon(extractedRateCon);
+                if (duplicate) {
+                    alert(`Duplicate Rate Con # detected. RC #${duplicate.rateConNumber} is already in the tracker. This PDF was not added.`);
+                    return;
+                }
                 document.getElementById('pdfForm').requestSubmit();
             }
         }
@@ -2312,14 +2452,56 @@
             });
         }
 
+        function normalizeRateCon(value) {
+            return String(value || '').trim().replace(/\s+/g, '').toUpperCase();
+        }
+
+        function findDuplicateRateCon(rateConNumber, excludeLoadId = null) {
+            const normalized = normalizeRateCon(rateConNumber);
+            if (!normalized) return null;
+            return loads.find(load =>
+                load.id !== excludeLoadId &&
+                normalizeRateCon(load.rateConNumber) === normalized
+            ) || null;
+        }
+
+        function getDuplicateRateConSet() {
+            const counts = new Map();
+            loads.forEach(load => {
+                const key = normalizeRateCon(load.rateConNumber);
+                if (key) counts.set(key, (counts.get(key) || 0) + 1);
+            });
+            return new Set([...counts.entries()].filter(([, count]) => count > 1).map(([key]) => key));
+        }
+
+        function getIssueLabel(load) {
+            return load.issue ? String(load.issue) : '';
+        }
+
+        function openIssueEditor(loadId) {
+            openEditModal(loadId);
+            setTimeout(() => {
+                const issueField = document.getElementById('editIssueType');
+                if (issueField) issueField.focus();
+            }, 50);
+        }
+
         async function addLoad(e) {
             e.preventDefault();
+
+            const rateConNumber = document.getElementById('rateConNumber').value.trim();
+            const duplicate = findDuplicateRateCon(rateConNumber);
+            if (duplicate) {
+                alert(`Duplicate Rate Con # detected. RC #${duplicate.rateConNumber} is already in the tracker.`);
+                document.getElementById('rateConNumber').focus();
+                return;
+            }
 
             const load = {
                 id: generateId(),
                 carrierName: document.getElementById('carrierName').value.trim(),
                 carrierPhone: document.getElementById('carrierPhone').value.trim(),
-                rateConNumber: document.getElementById('rateConNumber').value.trim(),
+                rateConNumber,
                 pickupCity: document.getElementById('pickupCity').value.trim(),
                 pickupDate: document.getElementById('pickupDate').value,
                 pickupTime: document.getElementById('pickupTime').value,
@@ -2327,6 +2509,8 @@
                 deliveryDate: document.getElementById('deliveryDate').value,
                 deliveryTime: document.getElementById('deliveryTime').value,
                 loadNotes: document.getElementById('loadNotes').value.trim(),
+                issue: '',
+                issueNote: '',
                 status: 'dispatched',
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
@@ -2349,11 +2533,19 @@
         async function processPdf(e) {
             e.preventDefault();
 
+            const rateConNumber = document.getElementById('pdfRateConNumber').value.trim();
+            const duplicate = findDuplicateRateCon(rateConNumber);
+            if (duplicate) {
+                alert(`Duplicate Rate Con # detected. RC #${duplicate.rateConNumber} is already in the tracker. This PDF was not added.`);
+                document.getElementById('pdfRateConNumber').focus();
+                return;
+            }
+
             const load = {
                 id: generateId(),
                 carrierName: document.getElementById('pdfCarrierName').value.trim(),
                 carrierPhone: document.getElementById('pdfCarrierPhone').value.trim(),
-                rateConNumber: document.getElementById('pdfRateConNumber').value.trim(),
+                rateConNumber,
                 pickupCity: document.getElementById('pdfPickupCity').value.trim(),
                 pickupDate: document.getElementById('pdfPickupDate').value,
                 pickupTime: document.getElementById('pdfPickupTime').value,
@@ -2361,6 +2553,8 @@
                 deliveryDate: document.getElementById('pdfDeliveryDate').value,
                 deliveryTime: document.getElementById('pdfDeliveryTime').value,
                 loadNotes: document.getElementById('pdfLoadNotes').value.trim(),
+                issue: '',
+                issueNote: '',
                 status: 'dispatched',
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
@@ -2439,6 +2633,8 @@
                 document.getElementById('editDeliveryDate').value = load.deliveryDate || '';
                 document.getElementById('editDeliveryTime').value = load.deliveryTime || '';
                 document.getElementById('editLoadNotes').value = load.loadNotes || '';
+                document.getElementById('editIssueType').value = load.issue || '';
+                document.getElementById('editIssueNote').value = load.issueNote || '';
                 document.getElementById('editLoadModal').classList.add('active');
             }
             closeDropdown(loadId);
@@ -2453,9 +2649,17 @@
             }
 
             const previous = { ...load };
+            const newRateConNumber = document.getElementById('editRateConNumber').value.trim();
+            const duplicate = findDuplicateRateCon(newRateConNumber, load.id);
+            if (duplicate) {
+                alert(`Duplicate Rate Con # detected. RC #${duplicate.rateConNumber} is already assigned to another load.`);
+                document.getElementById('editRateConNumber').focus();
+                return;
+            }
+
             load.carrierName = document.getElementById('editCarrierName').value.trim();
             load.carrierPhone = document.getElementById('editCarrierPhone').value.trim();
-            load.rateConNumber = document.getElementById('editRateConNumber').value.trim();
+            load.rateConNumber = newRateConNumber;
             load.pickupCity = document.getElementById('editPickupCity').value.trim();
             load.pickupDate = document.getElementById('editPickupDate').value;
             load.pickupTime = document.getElementById('editPickupTime').value;
@@ -2463,6 +2667,8 @@
             load.deliveryDate = document.getElementById('editDeliveryDate').value;
             load.deliveryTime = document.getElementById('editDeliveryTime').value;
             load.loadNotes = document.getElementById('editLoadNotes').value.trim();
+            load.issue = document.getElementById('editIssueType').value;
+            load.issueNote = document.getElementById('editIssueNote').value.trim();
             load.updatedAt = new Date().toISOString();
             renderLoads();
             closeModal('editLoadModal');
@@ -2505,10 +2711,33 @@
             if (index === -1) return;
 
             const original = loads[index];
+            const suggested = `${original.rateConNumber}-COPY`;
+            const newRateConNumber = prompt(
+                `Enter a new Rate Con # for the duplicate of RC #${original.rateConNumber}:`,
+                suggested
+            );
+
+            if (newRateConNumber === null) return;
+
+            const trimmedRateCon = newRateConNumber.trim();
+            if (!trimmedRateCon) {
+                alert('A new Rate Con # is required. The duplicate was not created.');
+                return;
+            }
+
+            const duplicate = findDuplicateRateCon(trimmedRateCon);
+            if (duplicate) {
+                alert(`Duplicate Rate Con # detected. RC #${duplicate.rateConNumber} already exists.`);
+                return;
+            }
+
             const copy = {
                 ...original,
                 id: generateId(),
+                rateConNumber: trimmedRateCon,
                 status: 'dispatched',
+                issue: '',
+                issueNote: '',
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
             };
@@ -2573,21 +2802,43 @@
             const container = document.getElementById('loadsContainer');
 
             const activeCount = loads.filter(l => MAIN_TAB_STAGES.includes(l.status)).length;
-            const deliveredCount = loads.filter(l => l.status === 'delivered').length;
             const podReceivedCount = loads.filter(l => l.status === 'pod-received').length;
             document.getElementById('tabCountActive').textContent = activeCount ? `(${activeCount})` : '';
-            document.getElementById('tabCountDelivered').textContent = deliveredCount ? `(${deliveredCount})` : '';
             document.getElementById('tabCountPodReceived').textContent = podReceivedCount ? `(${podReceivedCount})` : '';
 
+            const duplicateRateCons = getDuplicateRateConSet();
+
             const visibleLoads = sortLoads(loads.filter((load) => {
-                if (currentTab === 'active') return MAIN_TAB_STAGES.includes(load.status);
-                return load.status === currentTab;
+                if (currentTab === 'active' && !MAIN_TAB_STAGES.includes(load.status)) return false;
+                if (currentTab !== 'active' && load.status !== currentTab) return false;
+                if (!loadMatchesSearch(load)) return false;
+                if (!loadMatchesIssueFilter(load)) return false;
+                return true;
             }));
 
+            const searchOrFilterActive = !!currentSearch || currentIssueFilter !== 'all';
+
+            const resultCount = document.getElementById('searchResultCount');
+            if (resultCount) {
+                resultCount.textContent = searchOrFilterActive
+                    ? `${visibleLoads.length} matching load${visibleLoads.length === 1 ? '' : 's'}`
+                    : `${visibleLoads.length} load${visibleLoads.length === 1 ? '' : 's'}`;
+            }
+
             if (visibleLoads.length === 0) {
+                if (searchOrFilterActive) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">🔎</div>
+                            <h2>No Matching Loads</h2>
+                            <p>Try a different search or filter.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
                 const emptyLabels = {
                     'active': ['📭', 'No Active Loads', 'Add your first load to get started'],
-                    'delivered': ['📦', 'No Delivered Loads', 'Loads marked Delivered will show up here'],
                     'pod-received': ['✅', 'No POD Received Loads', 'Loads marked POD Received will show up here']
                 };
                 const [icon, title, subtitle] = emptyLabels[currentTab];
@@ -2608,9 +2859,13 @@
                             <button class="menu-btn" onclick="toggleDropdown('${load.id}', event)">⋮</button>
                             <div class="dropdown-menu" data-menu="${load.id}">
                                 <button onclick="openEditModal('${load.id}')">Edit</button>
-                                <button onclick="duplicateLoad('${load.id}')">Duplicate</button>
+                                <button onclick="duplicateLoad('${load.id}')">Duplicate (new RC)</button>
                                 <button class="delete" onclick="deleteLoad('${load.id}')">Delete</button>
                             </div>
+                        </div>
+                        <div class="load-alert-icons">
+                            ${load.issue ? `<span class="load-alert-icon issue" title="${escapeHtml(getIssueLabel(load) + (load.issueNote ? ': ' + load.issueNote : ''))}" aria-label="Issue flagged">!</span>` : ''}
+                            ${duplicateRateCons.has(normalizeRateCon(load.rateConNumber)) ? `<span class="load-alert-icon duplicate" title="Duplicate Rate Con # detected: ${escapeHtml(load.rateConNumber)}" aria-label="Duplicate Rate Con">!</span>` : ''}
                         </div>
                         <div class="load-field field-rate-con">
                             <div class="load-field-value">${escapeHtml(load.rateConNumber)}</div>
@@ -2659,6 +2914,20 @@
                                 <div class="expanded-section-value">${escapeHtml(load.loadNotes)}</div>
                             </div>
                         ` : ''}
+                        ${load.issue ? `
+                            <div class="issue-section has-issue">
+                                <div class="issue-section-label">⚠ Exception / Issue</div>
+                                <div class="issue-section-value">${escapeHtml(load.issue)}</div>
+                                ${load.issueNote ? `<div class="issue-section-note">${escapeHtml(load.issueNote)}</div>` : ''}
+                                <button type="button" class="issue-btn" onclick="event.stopPropagation(); openIssueEditor('${load.id}')">Edit / Clear Issue</button>
+                            </div>
+                        ` : `
+                            <div class="issue-section">
+                                <div class="issue-section-label">No Issue Flagged</div>
+                                <div class="issue-section-value">Everything looks normal</div>
+                                <button type="button" class="issue-btn" onclick="event.stopPropagation(); openIssueEditor('${load.id}')">⚠ Flag an Issue</button>
+                            </div>
+                        `}
                         <div class="expanded-section">
                             <div class="expanded-section-label">Status</div>
                             <div class="stage-buttons">

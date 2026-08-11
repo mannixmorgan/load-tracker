@@ -814,6 +814,17 @@
             cursor: default;
         }
 
+        /* The last arrow removes the load rather than advancing it, so it
+           shouldn't look identical to a normal stage step. */
+        .stage-nav-btn.stage-nav-clean {
+            background: #26A69A;
+            color: white;
+        }
+
+        .stage-nav-btn.stage-nav-clean:hover {
+            background: #1f8e83;
+        }
+
         .load-card-menu {
             position: relative;
             flex-shrink: 0;
@@ -1086,7 +1097,6 @@
                 <div class="header-actions">
                     <button class="btn-primary" onclick="openAddLoadModal()">+ Add Load</button>
                     <button class="btn-secondary" onclick="openPdfModal()">📄 PDF</button>
-                    <button class="btn-secondary" onclick="clearOldLoads()">Clean</button>
                 </div>
             </header>
 
@@ -1400,7 +1410,6 @@
             'delivered': 'Delivered',
             'pod-received': 'POD Received'
         };
-        const MAX_LOAD_AGE_DAYS = 7;
         // Each tab owns a distinct set of stages, so a load lives in exactly
         // one tab and moves along as its status advances.
         const ACTIVE_STAGES = ['dispatched', 'loading', 'in-transit', 'unloading'];
@@ -1599,15 +1608,11 @@
             return db.collection('loads').doc(id).delete();
         }
 
-        function apiDeleteLoads(ids) {
-            return Promise.all(ids.map((id) => db.collection('loads').doc(id).delete()));
-        }
-
         function subscribeToLoads() {
             if (loadsUnsubscribe) return;
             loadsUnsubscribe = db.collection('loads').onSnapshot(
                 (snapshot) => {
-                    loads = snapshot.docs.map((doc) => doc.data()).filter(isLoadFresh);
+                    loads = snapshot.docs.map((doc) => doc.data());
                     // Ordering is applied at render time via sortLoads().
                     renderLoads();
                 },
@@ -1706,11 +1711,6 @@
                 return crypto.randomUUID();
             }
             return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-        }
-
-        function isLoadFresh(load) {
-            const cutoff = Date.now() - MAX_LOAD_AGE_DAYS * 24 * 60 * 60 * 1000;
-            return new Date(load.createdAt).getTime() > cutoff;
         }
 
         function openAddLoadModal() {
@@ -2733,23 +2733,35 @@
             }
         }
 
-        async function clearOldLoads() {
-            const stale = loads.filter(l => !isLoadFresh(l));
-            if (stale.length === 0) {
-                alert('No loads older than 7 days');
-                return;
-            }
+        // ── Cleaning a finished load off the board ───────────────────
+        // The forward arrow on a POD Received load is the last step: it
+        // clears the load off the board. Loads are no longer removed on any
+        // schedule - they stay until someone advances them off deliberately.
+        async function cleanLoad(loadId) {
+            const load = loads.find(l => l.id === loadId);
+            if (!load) return;
 
-            const staleIds = stale.map(l => l.id);
-            loads = loads.filter(isLoadFresh);
+            const confirmed = confirm(
+                `Clean rate con ${load.rateConNumber} off the board?\n\n` +
+                `${load.carrierName || 'Unknown carrier'}\n` +
+                `${load.pickupCity || '?'} \u2192 ${load.deliveryCity || '?'}\n\n` +
+                `This removes it permanently.`
+            );
+            if (!confirmed) return;
+
+            const index = loads.findIndex(l => l.id === loadId);
+            const removed = index > -1 ? loads[index] : null;
+            loads = loads.filter(l => l.id !== loadId);
+            if (expandedLoadId === loadId) expandedLoadId = null;
             renderLoads();
 
             try {
-                await apiDeleteLoads(staleIds);
-                alert(`Cleaned up ${staleIds.length} old load(s)`);
+                await apiDeleteLoad(loadId);
             } catch (err) {
-                console.error('Failed to clean up old loads:', err);
-                alert('Could not remove old loads from the server - check your connection and try again.');
+                console.error('Failed to clean load:', err);
+                if (removed) loads.splice(index, 0, removed);
+                renderLoads();
+                alert('Could not clean the load - check your connection and try again.');
             }
         }
 
@@ -2891,12 +2903,19 @@
                                 title="Move back a stage"
                                 ${STAGES.indexOf(load.status) === 0 ? 'disabled' : ''}
                             >←</button>
-                            <button
-                                class="stage-nav-btn"
-                                onclick="event.stopPropagation(); moveLoadForward('${load.id}')"
-                                title="Move forward a stage"
-                                ${STAGES.indexOf(load.status) === STAGES.length - 1 ? 'disabled' : ''}
-                            >→</button>
+                            ${STAGES.indexOf(load.status) === STAGES.length - 1 ? `
+                                <button
+                                    class="stage-nav-btn stage-nav-clean"
+                                    onclick="event.stopPropagation(); cleanLoad('${load.id}')"
+                                    title="Clean this load off the board"
+                                >→</button>
+                            ` : `
+                                <button
+                                    class="stage-nav-btn"
+                                    onclick="event.stopPropagation(); moveLoadForward('${load.id}')"
+                                    title="Move forward a stage"
+                                >→</button>
+                            `}
                         </div>
                     </div>
                     <div class="load-card-expanded ${expandedLoadId === load.id ? 'active' : ''}">

@@ -825,6 +825,17 @@
             background: #1f8e83;
         }
 
+        /* Same teal as the per-load clean arrow, so both removal actions
+           read as the same kind of thing. */
+        .clean-all-btn {
+            background: #26A69A;
+            color: white;
+        }
+
+        .clean-all-btn:hover {
+            background: #1f8e83;
+        }
+
         .load-card-menu {
             position: relative;
             flex-shrink: 0;
@@ -1105,6 +1116,7 @@
                 <button class="tab-btn" data-tab="delivered" onclick="switchTab('delivered')">Delivered <span class="tab-count" id="tabCountDelivered"></span></button>
                 <button class="tab-btn" data-tab="pod-received" onclick="switchTab('pod-received')">POD Received <span class="tab-count" id="tabCountPodReceived"></span></button>
                 <div class="board-controls">
+                    <button class="tab-btn clean-all-btn" id="cleanAllBtn" onclick="cleanAllPodReceived()" style="display: none;">🧹 Clean All</button>
                     <button class="tab-btn" id="autoScrollBtn" onclick="toggleAutoScroll()">▶ Auto Scroll</button>
                     <select id="autoScrollSpeed" title="Auto scroll speed">
                         <option value="15">Slow</option>
@@ -1606,6 +1618,10 @@
 
         function apiDeleteLoad(id) {
             return db.collection('loads').doc(id).delete();
+        }
+
+        function apiDeleteLoads(ids) {
+            return Promise.all(ids.map((id) => db.collection('loads').doc(id).delete()));
         }
 
         function subscribeToLoads() {
@@ -2737,6 +2753,36 @@
         // The forward arrow on a POD Received load is the last step: it
         // clears the load off the board. Loads are no longer removed on any
         // schedule - they stay until someone advances them off deliberately.
+        // Clears the whole POD Received tab in one go. Cleaning finished
+        // loads one at a time is fine day to day, but they accumulate now
+        // that nothing ages off on its own.
+        async function cleanAllPodReceived() {
+            const target = loads.filter(l => l.status === 'pod-received');
+            if (!target.length) return;
+
+            const confirmed = confirm(
+                `Clean all ${target.length} POD Received load${target.length === 1 ? '' : 's'} off the board?\n\n` +
+                `This removes them permanently.`
+            );
+            if (!confirmed) return;
+
+            const ids = target.map(l => l.id);
+            const removed = target.slice();
+            if (ids.includes(expandedLoadId)) expandedLoadId = null;
+
+            loads = loads.filter(l => l.status !== 'pod-received');
+            renderLoads();
+
+            try {
+                await apiDeleteLoads(ids);
+            } catch (err) {
+                console.error('Failed to clean POD Received loads:', err);
+                loads = loads.concat(removed);
+                renderLoads();
+                alert('Could not clean the loads - check your connection and try again.');
+            }
+        }
+
         async function cleanLoad(loadId) {
             const load = loads.find(l => l.id === loadId);
             if (!load) return;
@@ -2815,6 +2861,14 @@
             document.getElementById('tabCountActive').textContent = activeCount ? `(${activeCount})` : '';
             document.getElementById('tabCountDelivered').textContent = deliveredCount ? `(${deliveredCount})` : '';
             document.getElementById('tabCountPodReceived').textContent = podReceivedCount ? `(${podReceivedCount})` : '';
+
+            // Only offer the bulk clean where it applies. Hidden during a
+            // search too, since search spans every tab and the button would
+            // act on loads that aren't the ones being shown.
+            const cleanAllBtn = document.getElementById('cleanAllBtn');
+            const showCleanAll = currentTab === 'pod-received' && podReceivedCount > 0 && !searchQuery;
+            cleanAllBtn.style.display = showCleanAll ? '' : 'none';
+            cleanAllBtn.textContent = `🧹 Clean All (${podReceivedCount})`;
 
             const visibleLoads = sortLoads(loads.filter((load) => {
                 // While searching, look across every tab - hunting for a rate

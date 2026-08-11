@@ -290,6 +290,75 @@
             flex-wrap: wrap;
         }
 
+        .search-row {
+            margin-bottom: 12px;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-family: inherit;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+        }
+
+        .search-input::placeholder {
+            color: rgba(255, 255, 255, 0.6);
+            font-weight: 600;
+        }
+
+        .search-input:focus {
+            outline: none;
+            background: rgba(255, 255, 255, 0.25);
+            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.2);
+        }
+
+        .search-status {
+            display: none;
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .search-status.active {
+            display: block;
+        }
+
+        /* A flagged problem outranks the stage colour - this rule sits after
+           the status rules so it wins the left-border colour. */
+        .load-card.has-issue {
+            border-left-color: #d32f2f;
+            background: #fffafa;
+        }
+
+        .issue-flag {
+            display: inline-block;
+            background: #d32f2f;
+            color: white;
+            border-radius: 16px;
+            padding: 7px 12px;
+            font-size: 13px;
+            font-weight: 800;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .expanded-section.issue-section .expanded-section-label {
+            color: #d32f2f;
+        }
+
+        .expanded-section.issue-section .expanded-section-value {
+            color: #b71c1c;
+            background: #ffebee;
+            padding: 10px 12px;
+            border-radius: 6px;
+        }
+
         /* Clearly signal that wallboard mode is running - on a projector
            across the room, the colour change reads at a glance. */
         #autoScrollBtn.scrolling {
@@ -1043,6 +1112,20 @@
                 </div>
             </div>
 
+            <div class="search-row">
+                <input
+                    type="search"
+                    id="searchInput"
+                    class="search-input"
+                    placeholder="Search rate con #, carrier, phone, city, notes…"
+                    oninput="renderLoads()"
+                    onsearch="renderLoads()"
+                    autocomplete="off"
+                >
+            </div>
+
+            <div class="search-status" id="searchStatus"></div>
+
             <div class="loads-container" id="loadsContainer">
                 <div class="empty-state">
                     <div class="empty-state-icon">📭</div>
@@ -1191,6 +1274,27 @@
         </div>
     </div>
 
+    <!-- Issue / Problem Modal -->
+    <div class="modal" id="issueModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>⚠ Flag a Problem</h2>
+                <button class="close-btn" onclick="closeModal('issueModal')">&times;</button>
+            </div>
+            <form id="issueForm" onsubmit="saveIssue(event)">
+                <div class="form-group">
+                    <label for="issueText">What's wrong?</label>
+                    <textarea id="issueText" placeholder="e.g., Truck broke down in Amarillo, driver waiting on tow"></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="closeModal('issueModal')">Cancel</button>
+                    <button type="submit" class="btn-primary">Flag Load</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Edit Load Modal -->
     <div class="modal" id="editLoadModal">
         <div class="modal-content">
@@ -1313,6 +1417,7 @@
 
         let loads = [];
         let editingLoadId = null;
+        let issuingLoadId = null;
         let expandedLoadId = null;
         let currentTab = 'active';
         let currentSort = 'rateCon';
@@ -1633,6 +1738,9 @@
                 statusDiv.textContent = '';
             } else if (modalId === 'editLoadModal') {
                 editingLoadId = null;
+            } else if (modalId === 'issueModal') {
+                resetForm('issueForm');
+                issuingLoadId = null;
             }
         }
 
@@ -2315,11 +2423,16 @@
         async function addLoad(e) {
             e.preventDefault();
 
+            const rateConNumber = document.getElementById('rateConNumber').value.trim();
+            // Ask before creating a second load with the same rate con.
+            // Bail out WITHOUT closing the modal so the number can be fixed.
+            if (!confirmIfDuplicate(rateConNumber)) return;
+
             const load = {
                 id: generateId(),
                 carrierName: document.getElementById('carrierName').value.trim(),
                 carrierPhone: document.getElementById('carrierPhone').value.trim(),
-                rateConNumber: document.getElementById('rateConNumber').value.trim(),
+                rateConNumber: rateConNumber,
                 pickupCity: document.getElementById('pickupCity').value.trim(),
                 pickupDate: document.getElementById('pickupDate').value,
                 pickupTime: document.getElementById('pickupTime').value,
@@ -2349,11 +2462,16 @@
         async function processPdf(e) {
             e.preventDefault();
 
+            const rateConNumber = document.getElementById('pdfRateConNumber').value.trim();
+            // Most important here: dropping a PDF auto-submits this form, so
+            // dropping the same rate con twice would create a silent duplicate.
+            if (!confirmIfDuplicate(rateConNumber)) return;
+
             const load = {
                 id: generateId(),
                 carrierName: document.getElementById('pdfCarrierName').value.trim(),
                 carrierPhone: document.getElementById('pdfCarrierPhone').value.trim(),
-                rateConNumber: document.getElementById('pdfRateConNumber').value.trim(),
+                rateConNumber: rateConNumber,
                 pickupCity: document.getElementById('pdfPickupCity').value.trim(),
                 pickupDate: document.getElementById('pdfPickupDate').value,
                 pickupTime: document.getElementById('pdfPickupTime').value,
@@ -2500,6 +2618,91 @@
             }
         }
 
+        // ── Issue flagging ───────────────────────────────────────────
+        // Real problems don't follow a schedule (breakdown, refused load,
+        // driver no-show), so this is a manual flag rather than something
+        // inferred from dates.
+        function openIssueModal(loadId) {
+            const load = loads.find(l => l.id === loadId);
+            if (!load) return;
+            issuingLoadId = loadId;
+            document.getElementById('issueText').value = load.issueNote || '';
+            document.getElementById('issueModal').classList.add('active');
+            closeDropdown(loadId);
+            setTimeout(() => document.getElementById('issueText').focus(), 50);
+        }
+
+        async function saveIssue(e) {
+            e.preventDefault();
+            const load = loads.find(l => l.id === issuingLoadId);
+            if (!load) {
+                closeModal('issueModal');
+                return;
+            }
+
+            const previous = load.issueNote || '';
+            load.issueNote = document.getElementById('issueText').value.trim();
+            load.updatedAt = new Date().toISOString();
+            renderLoads();
+            closeModal('issueModal');
+
+            try {
+                await apiUpdateLoad(load);
+            } catch (err) {
+                console.error('Failed to save issue flag:', err);
+                load.issueNote = previous;
+                renderLoads();
+                alert('Could not save the flag - check your connection and try again.');
+            }
+        }
+
+        async function clearIssue(loadId) {
+            const load = loads.find(l => l.id === loadId);
+            if (!load) return;
+            closeDropdown(loadId);
+
+            const previous = load.issueNote || '';
+            load.issueNote = '';
+            load.updatedAt = new Date().toISOString();
+            renderLoads();
+
+            try {
+                await apiUpdateLoad(load);
+            } catch (err) {
+                console.error('Failed to clear issue flag:', err);
+                load.issueNote = previous;
+                renderLoads();
+                alert('Could not clear the flag - check your connection and try again.');
+            }
+        }
+
+        // ── Duplicate rate con guard ─────────────────────────────────
+        // Dropping a PDF auto-creates a load, so dropping the same rate con
+        // twice would silently produce two identical entries. Compare on a
+        // normalised rate con number (trimmed, case-insensitive) so "8895"
+        // and " 8895 " count as the same load.
+        function findDuplicateRateCon(rateConNumber, excludeId) {
+            const normalized = String(rateConNumber || '').trim().toLowerCase();
+            if (!normalized) return null;
+            return loads.find(l =>
+                l.id !== excludeId &&
+                String(l.rateConNumber || '').trim().toLowerCase() === normalized
+            ) || null;
+        }
+
+        // Returns true if it's OK to proceed.
+        function confirmIfDuplicate(rateConNumber) {
+            const existing = findDuplicateRateCon(rateConNumber);
+            if (!existing) return true;
+            const where = `${existing.pickupCity || '?'} → ${existing.deliveryCity || '?'}`;
+            const stage = STAGE_LABELS[existing.status] || existing.status;
+            return confirm(
+                `Rate Con ${rateConNumber} is already on the board:\n\n` +
+                `${existing.carrierName || 'Unknown carrier'}\n${where}\nStatus: ${stage}\n\n` +
+                `Add it again anyway?`
+            );
+        }
+
         async function duplicateLoad(loadId) {
             const index = loads.findIndex(l => l.id === loadId);
             if (index === -1) return;
@@ -2509,6 +2712,9 @@
                 ...original,
                 id: generateId(),
                 status: 'dispatched',
+                // A fresh copy starts clean - the original's breakdown or
+                // delay doesn't apply to a brand new load.
+                issueNote: '',
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
             };
@@ -2569,8 +2775,27 @@
             });
         });
 
+        // Searchable text for one load. Every space-separated term must match
+        // somewhere, so "gomez houston" narrows instead of widening.
+        function loadMatchesSearch(load, query) {
+            const haystack = [
+                load.rateConNumber,
+                load.carrierName,
+                load.carrierPhone,
+                load.pickupCity,
+                load.deliveryCity,
+                load.loadNotes,
+                load.issueNote,
+                STAGE_LABELS[load.status] || load.status
+            ].filter(Boolean).join(' ').toLowerCase();
+
+            return query.split(/\s+/).every(term => haystack.includes(term));
+        }
+
         function renderLoads() {
             const container = document.getElementById('loadsContainer');
+            const searchEl = document.getElementById('searchInput');
+            const searchQuery = searchEl ? searchEl.value.trim().toLowerCase() : '';
 
             const activeCount = loads.filter(l => MAIN_TAB_STAGES.includes(l.status)).length;
             const deliveredCount = loads.filter(l => l.status === 'delivered').length;
@@ -2580,11 +2805,36 @@
             document.getElementById('tabCountPodReceived').textContent = podReceivedCount ? `(${podReceivedCount})` : '';
 
             const visibleLoads = sortLoads(loads.filter((load) => {
+                // While searching, look across every tab - hunting for a rate
+                // con is useless if it's hidden just because it's already
+                // been delivered. The status line below says so explicitly.
+                if (searchQuery) return loadMatchesSearch(load, searchQuery);
                 if (currentTab === 'active') return MAIN_TAB_STAGES.includes(load.status);
                 return load.status === currentTab;
             }));
 
+            const statusEl = document.getElementById('searchStatus');
+            if (searchQuery) {
+                statusEl.classList.add('active');
+                statusEl.textContent = visibleLoads.length
+                    ? `${visibleLoads.length} result${visibleLoads.length === 1 ? '' : 's'} for "${searchQuery}" — searching all tabs`
+                    : `No loads match "${searchQuery}"`;
+            } else {
+                statusEl.classList.remove('active');
+                statusEl.textContent = '';
+            }
+
             if (visibleLoads.length === 0) {
+                if (searchQuery) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">🔍</div>
+                            <h2>No matches</h2>
+                            <p>Nothing matches "${escapeHtml(searchQuery)}" — try a rate con #, carrier, or city.</p>
+                        </div>
+                    `;
+                    return;
+                }
                 const emptyLabels = {
                     'active': ['📭', 'No Active Loads', 'Add your first load to get started'],
                     'delivered': ['📦', 'No Delivered Loads', 'Loads marked Delivered will show up here'],
@@ -2602,13 +2852,15 @@
             }
 
             container.innerHTML = visibleLoads.map(load => `
-                <div class="load-card ${load.status}">
+                <div class="load-card ${load.status}${load.issueNote ? ' has-issue' : ''}">
                     <div class="load-card-collapsed" onclick="toggleCardExpand('${load.id}', event)">
                         <div class="load-card-menu">
                             <button class="menu-btn" onclick="toggleDropdown('${load.id}', event)">⋮</button>
                             <div class="dropdown-menu" data-menu="${load.id}">
                                 <button onclick="openEditModal('${load.id}')">Edit</button>
                                 <button onclick="duplicateLoad('${load.id}')">Duplicate</button>
+                                <button onclick="openIssueModal('${load.id}')">${load.issueNote ? '⚠ Edit Problem' : '⚠ Flag Problem'}</button>
+                                ${load.issueNote ? `<button onclick="clearIssue('${load.id}')">✓ Clear Problem</button>` : ''}
                                 <button class="delete" onclick="deleteLoad('${load.id}')">Delete</button>
                             </div>
                         </div>
@@ -2630,6 +2882,7 @@
                             <div class="load-field-value">${escapeHtml(load.deliveryCity)}</div>
                             ${(load.deliveryDate || load.deliveryTime) ? `<div class="load-field-sub">${formatDateWithWeekday(load.deliveryDate)}${load.deliveryTime ? ' · ' + formatTime(load.deliveryTime) : ''}</div>` : ''}
                         </div>
+                        ${load.issueNote ? `<span class="issue-flag" title="${escapeHtml(load.issueNote)}">⚠ Problem</span>` : ''}
                         <span class="status-badge-compact ${load.status}">${STAGE_LABELS[load.status] || load.status}</span>
                         <div class="load-stage-nav">
                             <button
@@ -2647,6 +2900,12 @@
                         </div>
                     </div>
                     <div class="load-card-expanded ${expandedLoadId === load.id ? 'active' : ''}">
+                        ${load.issueNote ? `
+                            <div class="expanded-section issue-section">
+                                <div class="expanded-section-label">⚠ Problem</div>
+                                <div class="expanded-section-value">${escapeHtml(load.issueNote)}</div>
+                            </div>
+                        ` : ''}
                         ${(load.pickupDate || load.deliveryDate) ? `
                             <div class="expanded-section">
                                 <div class="expanded-section-label">Dates</div>

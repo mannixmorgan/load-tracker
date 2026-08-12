@@ -2373,13 +2373,15 @@
                     // is what separates a real time from an incidental one.
                     const APPOINTMENT_KEYWORDS = /(deliver|delivery|drop|unload|pick\s*-?\s*up|pickup|load|loading|appt|appointment|set\s+for|arriv|check\s*-?\s*in|ready|time|@)/i;
 
-                    // Deadline wording means "no later than X" - a cutoff, not
-                    // the scheduled time. "DELIVER AT 8AM" is an appointment;
-                    // "DELIVER BY 3PM" and "LOADING ENDS 3PM" are not, and
-                    // filling them in as the pickup/delivery time is worse
-                    // than leaving the field blank. The optional "at" catches
-                    // phrasings like "LOADING ENDS AT 3PM".
-                    const DEADLINE_MARKERS = /\b(by|before|no\s+later\s+than|nlt|prior\s+to|cut\s*-?\s*off|ends?|closes?|until|til|till|deadline|must\s+(?:be|deliver|arrive|load))\b(?:\s+(?:at|around|approx\.?))?[^a-z0-9]*$/i;
+                    // A time is only an appointment if it's THE scheduled
+                    // time. Words describing either edge of a window are not:
+                    //   closing edge - "deliver by 3PM", "loading ends 3PM"
+                    //   opening edge - "loading starts at 8AM", "from 8AM"
+                    // Both just bound when the facility will handle the load.
+                    // Filling either in as the pickup/delivery time is worse
+                    // than leaving it blank. The optional trailing word catches
+                    // phrasings like "LOADING ENDS AT 3PM" / "STARTS AT 8AM".
+                    const WINDOW_MARKERS = /\b(by|before|no\s+later\s+than|nlt|prior\s+to|cut\s*-?\s*off|ends?|ending|closes?|closing|until|til|till|deadline|starts?|starting|begins?|beginning|opens?|opening|from|after|anytime|any\s+time|must\s+(?:be|deliver|arrive|load))\b(?:\s+(?:at|around|approx\.?|on))?[^a-z0-9]*$/i;
 
                     function findAppointmentTime(zoneText) {
                         const matches = [...zoneText.matchAll(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM|am|pm)/g)];
@@ -2395,12 +2397,12 @@
                             // Require appointment wording near the time.
                             const context = zoneText.slice(Math.max(0, m.index - 40), m.index);
                             if (!APPOINTMENT_KEYWORDS.test(context)) continue;
-                            // ...but not if it's phrased as a deadline. Checked
-                            // against a short window so only the words right
+                            // ...but not if it just bounds a window. Checked
+                            // against a short lookback so only the words right
                             // before the time count - a stray "by" earlier in
                             // a long note shouldn't disqualify a real time.
-                            const immediate = zoneText.slice(Math.max(0, m.index - 20), m.index);
-                            if (DEADLINE_MARKERS.test(immediate)) continue;
+                            const immediate = zoneText.slice(Math.max(0, m.index - 25), m.index);
+                            if (WINDOW_MARKERS.test(immediate)) continue;
                             return findTime(m[0]);
                         }
                         return null;

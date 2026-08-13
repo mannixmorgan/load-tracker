@@ -734,14 +734,6 @@
             text-align: center;
         }
 
-        .load-facility {
-            font-size: 12px;
-            font-weight: 700;
-            color: #666;
-            margin-top: 1px;
-            text-align: center;
-        }
-
         .load-field-sub {
             font-size: 12px;
             font-weight: 600;
@@ -842,6 +834,40 @@
 
         .clean-all-btn:hover {
             background: #1f8e83;
+        }
+
+        /* The viewer needs far more room than the data-entry modals, so it
+           overrides the shared max-width rather than reusing it. */
+        .pdf-viewer-content {
+            max-width: 1000px;
+            width: 95%;
+            height: 92vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .pdf-viewer-frame {
+            flex: 1;
+            width: 100%;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #f5f5f5;
+            min-height: 0;
+        }
+
+        .load-pdf-link {
+            background: none;
+            border: none;
+            font-size: 20px;
+            line-height: 1;
+            padding: 6px 8px;
+            cursor: pointer;
+            border-radius: 6px;
+            flex-shrink: 0;
+        }
+
+        .load-pdf-link:hover {
+            background: #e8f0f5;
         }
 
         .load-card-menu {
@@ -1195,11 +1221,6 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="pickupFacility">Pickup Location Name (Optional)</label>
-                    <input type="text" id="pickupFacility" placeholder="e.g., Gaurdian Tubular Services">
-                </div>
-
-                <div class="form-group">
                     <label for="pickupDate">Pickup Date</label>
                     <input type="date" id="pickupDate">
                 </div>
@@ -1212,11 +1233,6 @@
                 <div class="form-group">
                     <label for="deliveryCity">Delivery City, State *</label>
                     <input type="text" id="deliveryCity" required placeholder="e.g., Chicago, IL">
-                </div>
-
-                <div class="form-group">
-                    <label for="deliveryFacility">Delivery Location Name (Optional)</label>
-                    <input type="text" id="deliveryFacility" placeholder="e.g., Ram Jack">
                 </div>
 
                 <div class="form-group">
@@ -1277,11 +1293,6 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="pdfPickupFacility">Pickup Location Name (Optional)</label>
-                    <input type="text" id="pdfPickupFacility" placeholder="e.g., Gaurdian Tubular Services">
-                </div>
-
-                <div class="form-group">
                     <label for="pdfPickupDate">Pickup Date</label>
                     <input type="date" id="pdfPickupDate">
                 </div>
@@ -1294,11 +1305,6 @@
                 <div class="form-group">
                     <label for="pdfDeliveryCity">Delivery City, State *</label>
                     <input type="text" id="pdfDeliveryCity" required placeholder="e.g., Chicago, IL">
-                </div>
-
-                <div class="form-group">
-                    <label for="pdfDeliveryFacility">Delivery Location Name (Optional)</label>
-                    <input type="text" id="pdfDeliveryFacility" placeholder="e.g., Ram Jack">
                 </div>
 
                 <div class="form-group">
@@ -1321,6 +1327,21 @@
                     <button type="submit" class="btn-primary">Create Load</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Rate Con PDF viewer -->
+    <div class="modal" id="pdfViewerModal">
+        <div class="modal-content pdf-viewer-content">
+            <div class="modal-header">
+                <h2 id="pdfViewerTitle">Rate Con</h2>
+                <button class="close-btn" onclick="closePdfViewer()">&times;</button>
+            </div>
+            <iframe id="pdfViewerFrame" class="pdf-viewer-frame" title="Rate con PDF"></iframe>
+            <div class="form-actions">
+                <button type="button" class="btn-secondary" onclick="closePdfViewer()">Close</button>
+                <button type="button" class="btn-primary" onclick="openPdfInNewTab()">Open in new tab</button>
+            </div>
         </div>
     </div>
 
@@ -1374,11 +1395,6 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="editPickupFacility">Pickup Location Name (Optional)</label>
-                    <input type="text" id="editPickupFacility">
-                </div>
-
-                <div class="form-group">
                     <label for="editPickupDate">Pickup Date</label>
                     <input type="date" id="editPickupDate">
                 </div>
@@ -1391,11 +1407,6 @@
                 <div class="form-group">
                     <label for="editDeliveryCity">Delivery City, State</label>
                     <input type="text" id="editDeliveryCity" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="editDeliveryFacility">Delivery Location Name (Optional)</label>
-                    <input type="text" id="editDeliveryFacility">
                 </div>
 
                 <div class="form-group">
@@ -1787,6 +1798,7 @@
                 resetForm('addLoadForm');
             } else if (modalId === 'pdfModal') {
                 resetForm('pdfForm');
+                pendingPdfAttachment = null;
                 const statusDiv = document.getElementById('extractionStatus');
                 statusDiv.className = 'extraction-status';
                 statusDiv.textContent = '';
@@ -1795,6 +1807,13 @@
             } else if (modalId === 'issueModal') {
                 resetForm('issueForm');
                 issuingLoadId = null;
+            } else if (modalId === 'pdfViewerModal') {
+                // Release the blob URL rather than leaking it.
+                document.getElementById('pdfViewerFrame').src = '';
+                if (currentPdfUrl) {
+                    URL.revokeObjectURL(currentPdfUrl);
+                    currentPdfUrl = null;
+                }
             }
         }
 
@@ -1916,6 +1935,23 @@
             await processPdfFile(file);
         }
 
+        // Holds the rate con that was just read, so it can be saved onto the
+        // load. These files run ~6KB, so they fit inside the load's own
+        // Firestore document (1MB cap) - no separate file storage needed.
+        let pendingPdfAttachment = null;
+        const MAX_ATTACHMENT_BYTES = 700 * 1024;
+
+        function arrayBufferToBase64(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            // Chunked - btoa on a huge spread arg can blow the call stack.
+            const CHUNK = 8192;
+            for (let i = 0; i < bytes.length; i += CHUNK) {
+                binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+            }
+            return btoa(binary);
+        }
+
         function processPdfFile(file) {
             const statusDiv = document.getElementById('extractionStatus');
             statusDiv.className = 'extraction-status';
@@ -1927,11 +1963,24 @@
 
                 reader.onload = async function(e) {
                 try {
+                    // Keep the original file so it can be attached to the load
+                    // and reopened from the board later.
+                    if (e.target.result.byteLength <= MAX_ATTACHMENT_BYTES) {
+                        pendingPdfAttachment = {
+                            name: file.name,
+                            data: arrayBufferToBase64(e.target.result)
+                        };
+                    } else {
+                        pendingPdfAttachment = null;
+                        console.warn('Rate con too large to attach:', e.target.result.byteLength, 'bytes');
+                    }
+
                     const pdf = await pdfjsLib.getDocument(e.target.result).promise;
                     const page = await pdf.getPage(1);
                     const textContent = await page.getTextContent();
                     const text = textContent.items.map(item => item.str).join(' ');
                     console.log('RAW PDF TEXT (for debugging extraction):', text);
+
 
                     let carrierName = '';
                     let carrierPhone = '';
@@ -2449,49 +2498,12 @@
                     let pickupTime = findLabeledTime([/Pick\s*-?\s*Up\s*Time[:\s]*/i]) || findAppointmentTime(pickupNoteZone) || '';
                     let deliveryTime = findLabeledTime([/Delivery\s*Time[:\s]*/i]) || findAppointmentTime(deliveryNoteZone) || '';
 
-                    // ── Facility name ────────────────────────────────
-                    // Each block reads: FACILITY / STREET / CITY ST ZIP.
-                    // We anchor on the STREET line and take the words just
-                    // before it. Anchoring on a street-type word (RD, HWY,
-                    // CO RD, a state route like OK-66) rather than "a number"
-                    // matters: a 5-digit ZIP looks exactly like a street
-                    // number otherwise, and the search lands on the wrong line.
-                    const STREET_LINE = /\b\d+[A-Za-z]?\s+(?:[A-Z0-9#.'\-]+\s+){0,3}(?:RD|ROAD|HWY|HIGHWAY|ST|STREET|AVE|AVENUE|DR|DRIVE|LN|LANE|BLVD|PKWY|PARKWAY|CT|COURT|CIR|CIRCLE|WAY|LOOP|TRL|TRAIL|PL|PLACE|RT|ROUTE|[A-Z]{2}-\d+)\b/g;
-                    // Words that end the note above - never the start of a
-                    // facility name, so they mark where to stop walking back.
-                    const FACILITY_STOP = /^(AT|TO|FROM|AND|OR|FOR|WITH|PER|THE|OF|A|AN|IS|WE|ANY|SENT|GIVE|DONT|USE|BOL|SHIPPER|PAPERWORK|DELIVERY|DELIVER|PICKUP|LOAD|LOADING|UNLOADING|HOURS|YARD|REF|RELEASE|COLLARS|REAR|FRONT|NOTE|NOTES)$/i;
-
-                    function findFacilityName(zoneText) {
-                        STREET_LINE.lastIndex = 0;
-                        const streets = [...zoneText.matchAll(STREET_LINE)];
-                        if (!streets.length) return '';
-                        const street = streets[streets.length - 1];
-                        const words = zoneText.slice(0, street.index).trim().split(/\s+/);
-                        const out = [];
-                        // Walk backwards from the street, gathering the name.
-                        // Cap at 4 words: real facility names are short, and
-                        // a cap is the last line of defence when a note runs
-                        // straight into the name with no clear separator.
-                        for (let i = words.length - 1; i >= 0 && out.length < 4; i--) {
-                            const w = words[i];
-                            if (/\d/.test(w)) break;              // note's trailing time/number
-                            if (/[&/:;,()]|^-+$/.test(w)) break;  // note punctuation ("S&S", "REF:", "-")
-                            if (FACILITY_STOP.test(w)) break;     // hit note wording
-                            out.unshift(w);
-                        }
-                        return out.join(' ').replace(/^[^A-Za-z]+|[^A-Za-z0-9.]+$/g, '').trim();
-                    }
-
-                    const pickupFacility = findFacilityName(pickupNoteZone);
-                    const deliveryFacility = findFacilityName(deliveryNoteZone);
 
                     // Fill in the fields
                     if (carrierName) document.getElementById('pdfCarrierName').value = carrierName;
                     if (carrierPhone) document.getElementById('pdfCarrierPhone').value = carrierPhone;
                     if (rateConNumber) document.getElementById('pdfRateConNumber').value = rateConNumber;
                     if (pickupCity) document.getElementById('pdfPickupCity').value = pickupCity;
-                    if (pickupFacility) document.getElementById('pdfPickupFacility').value = pickupFacility;
-                    if (deliveryFacility) document.getElementById('pdfDeliveryFacility').value = deliveryFacility;
                     if (deliveryCity) document.getElementById('pdfDeliveryCity').value = deliveryCity;
                     if (pickupDate) document.getElementById('pdfPickupDate').value = pickupDate;
                     if (deliveryDate) document.getElementById('pdfDeliveryDate').value = deliveryDate;
@@ -2542,11 +2554,9 @@
                 carrierPhone: document.getElementById('carrierPhone').value.trim(),
                 rateConNumber: rateConNumber,
                 pickupCity: document.getElementById('pickupCity').value.trim(),
-                pickupFacility: document.getElementById('pickupFacility').value.trim(),
                 pickupDate: document.getElementById('pickupDate').value,
                 pickupTime: document.getElementById('pickupTime').value,
                 deliveryCity: document.getElementById('deliveryCity').value.trim(),
-                deliveryFacility: document.getElementById('deliveryFacility').value.trim(),
                 deliveryDate: document.getElementById('deliveryDate').value,
                 deliveryTime: document.getElementById('deliveryTime').value,
                 loadNotes: document.getElementById('loadNotes').value.trim(),
@@ -2583,14 +2593,14 @@
                 carrierPhone: document.getElementById('pdfCarrierPhone').value.trim(),
                 rateConNumber: rateConNumber,
                 pickupCity: document.getElementById('pdfPickupCity').value.trim(),
-                pickupFacility: document.getElementById('pdfPickupFacility').value.trim(),
                 pickupDate: document.getElementById('pdfPickupDate').value,
                 pickupTime: document.getElementById('pdfPickupTime').value,
                 deliveryCity: document.getElementById('pdfDeliveryCity').value.trim(),
-                deliveryFacility: document.getElementById('pdfDeliveryFacility').value.trim(),
                 deliveryDate: document.getElementById('pdfDeliveryDate').value,
                 deliveryTime: document.getElementById('pdfDeliveryTime').value,
                 loadNotes: document.getElementById('pdfLoadNotes').value.trim(),
+                pdfName: pendingPdfAttachment ? pendingPdfAttachment.name : '',
+                pdfData: pendingPdfAttachment ? pendingPdfAttachment.data : '',
                 status: 'dispatched',
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
@@ -2663,11 +2673,9 @@
                 document.getElementById('editCarrierPhone').value = load.carrierPhone || '';
                 document.getElementById('editRateConNumber').value = load.rateConNumber;
                 document.getElementById('editPickupCity').value = load.pickupCity;
-                document.getElementById('editPickupFacility').value = load.pickupFacility || '';
                 document.getElementById('editPickupDate').value = load.pickupDate || '';
                 document.getElementById('editPickupTime').value = load.pickupTime || '';
                 document.getElementById('editDeliveryCity').value = load.deliveryCity;
-                document.getElementById('editDeliveryFacility').value = load.deliveryFacility || '';
                 document.getElementById('editDeliveryDate').value = load.deliveryDate || '';
                 document.getElementById('editDeliveryTime').value = load.deliveryTime || '';
                 document.getElementById('editLoadNotes').value = load.loadNotes || '';
@@ -2689,11 +2697,9 @@
             load.carrierPhone = document.getElementById('editCarrierPhone').value.trim();
             load.rateConNumber = document.getElementById('editRateConNumber').value.trim();
             load.pickupCity = document.getElementById('editPickupCity').value.trim();
-            load.pickupFacility = document.getElementById('editPickupFacility').value.trim();
             load.pickupDate = document.getElementById('editPickupDate').value;
             load.pickupTime = document.getElementById('editPickupTime').value;
             load.deliveryCity = document.getElementById('editDeliveryCity').value.trim();
-            load.deliveryFacility = document.getElementById('editDeliveryFacility').value.trim();
             load.deliveryDate = document.getElementById('editDeliveryDate').value;
             load.deliveryTime = document.getElementById('editDeliveryTime').value;
             load.loadNotes = document.getElementById('editLoadNotes').value.trim();
@@ -2738,6 +2744,45 @@
         // Real problems don't follow a schedule (breakdown, refused load,
         // driver no-show), so this is a manual flag rather than something
         // inferred from dates.
+        // ── Rate con viewer ──────────────────────────────────────────
+        // The stored PDF is base64. Browsers block data: URLs in iframes, so
+        // convert to a Blob and hand the iframe a blob: URL instead.
+        let currentPdfUrl = null;
+
+        function base64ToBlobUrl(base64) {
+            const binary = atob(base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            return URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+        }
+
+        function openPdfViewer(loadId, e) {
+            if (e) e.stopPropagation();
+            const load = loads.find(l => l.id === loadId);
+            if (!load || !load.pdfData) return;
+
+            if (currentPdfUrl) URL.revokeObjectURL(currentPdfUrl);
+            currentPdfUrl = base64ToBlobUrl(load.pdfData);
+
+            document.getElementById('pdfViewerTitle').textContent =
+                'Rate Con ' + (load.rateConNumber || '') + (load.carrierName ? ' — ' + load.carrierName : '');
+            document.getElementById('pdfViewerFrame').src = currentPdfUrl;
+            document.getElementById('pdfViewerModal').classList.add('active');
+        }
+
+        function closePdfViewer() {
+            document.getElementById('pdfViewerModal').classList.remove('active');
+            document.getElementById('pdfViewerFrame').src = '';
+            if (currentPdfUrl) {
+                URL.revokeObjectURL(currentPdfUrl);
+                currentPdfUrl = null;
+            }
+        }
+
+        function openPdfInNewTab() {
+            if (currentPdfUrl) window.open(currentPdfUrl, '_blank');
+        }
+
         function openIssueModal(loadId) {
             const load = loads.find(l => l.id === loadId);
             if (!load) return;
@@ -2942,8 +2987,6 @@
                 load.carrierPhone,
                 load.pickupCity,
                 load.deliveryCity,
-                load.pickupFacility,
-                load.deliveryFacility,
                 load.loadNotes,
                 load.issueNote,
                 STAGE_LABELS[load.status] || load.status
@@ -3035,6 +3078,7 @@
                         <div class="load-field field-rate-con">
                             <div class="load-field-value">${escapeHtml(load.rateConNumber)}</div>
                         </div>
+                        ${load.pdfData ? `<button class="load-pdf-link" onclick="openPdfViewer('${load.id}', event)" title="View rate con PDF">📎</button>` : ''}
                         <div class="load-field field-carrier">
                             <div class="load-field-label">Carrier</div>
                             <div class="load-field-value">${escapeHtml(load.carrierName)}</div>
@@ -3043,13 +3087,11 @@
                         <div class="load-field field-pickup">
                             <div class="load-field-label">Pickup</div>
                             <div class="load-field-value">${escapeHtml(load.pickupCity)}</div>
-                            ${load.pickupFacility ? `<div class="load-facility">${escapeHtml(load.pickupFacility)}</div>` : ''}
                             ${(load.pickupDate || load.pickupTime) ? `<div class="load-field-sub">${formatDateWithWeekday(load.pickupDate)}${load.pickupTime ? ' · ' + formatTime(load.pickupTime) : ''}</div>` : ''}
                         </div>
                         <div class="load-field field-delivery">
                             <div class="load-field-label">Delivery</div>
                             <div class="load-field-value">${escapeHtml(load.deliveryCity)}</div>
-                            ${load.deliveryFacility ? `<div class="load-facility">${escapeHtml(load.deliveryFacility)}</div>` : ''}
                             ${(load.deliveryDate || load.deliveryTime) ? `<div class="load-field-sub">${formatDateWithWeekday(load.deliveryDate)}${load.deliveryTime ? ' · ' + formatTime(load.deliveryTime) : ''}</div>` : ''}
                         </div>
                         ${load.issueNote ? `<span class="issue-flag" title="${escapeHtml(load.issueNote)}">⚠ Problem</span>` : ''}

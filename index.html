@@ -2459,7 +2459,7 @@
                     const STREET_LINE = /\b\d+[A-Za-z]?\s+(?:[A-Z0-9#.'\-]+\s+){0,3}(?:RD|ROAD|HWY|HIGHWAY|ST|STREET|AVE|AVENUE|DR|DRIVE|LN|LANE|BLVD|PKWY|PARKWAY|CT|COURT|CIR|CIRCLE|WAY|LOOP|TRL|TRAIL|PL|PLACE|RT|ROUTE|[A-Z]{2}-\d+)\b/g;
                     // Words that end the note above - never the start of a
                     // facility name, so they mark where to stop walking back.
-                    const FACILITY_STOP = /^(AT|TO|FROM|AND|OR|FOR|WITH|PER|THE|OF|A|AN|IS|WE|ANY|SENT|GIVE|DONT|USE|BOL|SHIPPER|PAPERWORK|DELIVERY|DELIVER|PICKUP|LOAD|LOADING|UNLOADING|HOURS|YARD)$/i;
+                    const FACILITY_STOP = /^(AT|TO|FROM|AND|OR|FOR|WITH|PER|THE|OF|A|AN|IS|WE|ANY|SENT|GIVE|DONT|USE|BOL|SHIPPER|PAPERWORK|DELIVERY|DELIVER|PICKUP|LOAD|LOADING|UNLOADING|HOURS|YARD|REF|RELEASE|COLLARS|REAR|FRONT|NOTE|NOTES)$/i;
 
                     function findFacilityName(zoneText) {
                         STREET_LINE.lastIndex = 0;
@@ -2469,10 +2469,14 @@
                         const words = zoneText.slice(0, street.index).trim().split(/\s+/);
                         const out = [];
                         // Walk backwards from the street, gathering the name.
-                        for (let i = words.length - 1; i >= 0 && out.length < 5; i--) {
+                        // Cap at 4 words: real facility names are short, and
+                        // a cap is the last line of defence when a note runs
+                        // straight into the name with no clear separator.
+                        for (let i = words.length - 1; i >= 0 && out.length < 4; i--) {
                             const w = words[i];
-                            if (/\d/.test(w)) break;          // hit the note's trailing time/number
-                            if (FACILITY_STOP.test(w)) break; // hit note wording
+                            if (/\d/.test(w)) break;              // note's trailing time/number
+                            if (/[&/:;,()]|^-+$/.test(w)) break;  // note punctuation ("S&S", "REF:", "-")
+                            if (FACILITY_STOP.test(w)) break;     // hit note wording
                             out.unshift(w);
                         }
                         return out.join(' ').replace(/^[^A-Za-z]+|[^A-Za-z0-9.]+$/g, '').trim();

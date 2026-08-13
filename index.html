@@ -734,6 +734,14 @@
             text-align: center;
         }
 
+        .load-facility {
+            font-size: 12px;
+            font-weight: 700;
+            color: #666;
+            margin-top: 1px;
+            text-align: center;
+        }
+
         .load-field-sub {
             font-size: 12px;
             font-weight: 600;
@@ -1187,6 +1195,11 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="pickupFacility">Pickup Location Name (Optional)</label>
+                    <input type="text" id="pickupFacility" placeholder="e.g., Gaurdian Tubular Services">
+                </div>
+
+                <div class="form-group">
                     <label for="pickupDate">Pickup Date</label>
                     <input type="date" id="pickupDate">
                 </div>
@@ -1199,6 +1212,11 @@
                 <div class="form-group">
                     <label for="deliveryCity">Delivery City, State *</label>
                     <input type="text" id="deliveryCity" required placeholder="e.g., Chicago, IL">
+                </div>
+
+                <div class="form-group">
+                    <label for="deliveryFacility">Delivery Location Name (Optional)</label>
+                    <input type="text" id="deliveryFacility" placeholder="e.g., Ram Jack">
                 </div>
 
                 <div class="form-group">
@@ -1259,6 +1277,11 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="pdfPickupFacility">Pickup Location Name (Optional)</label>
+                    <input type="text" id="pdfPickupFacility" placeholder="e.g., Gaurdian Tubular Services">
+                </div>
+
+                <div class="form-group">
                     <label for="pdfPickupDate">Pickup Date</label>
                     <input type="date" id="pdfPickupDate">
                 </div>
@@ -1271,6 +1294,11 @@
                 <div class="form-group">
                     <label for="pdfDeliveryCity">Delivery City, State *</label>
                     <input type="text" id="pdfDeliveryCity" required placeholder="e.g., Chicago, IL">
+                </div>
+
+                <div class="form-group">
+                    <label for="pdfDeliveryFacility">Delivery Location Name (Optional)</label>
+                    <input type="text" id="pdfDeliveryFacility" placeholder="e.g., Ram Jack">
                 </div>
 
                 <div class="form-group">
@@ -1346,6 +1374,11 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="editPickupFacility">Pickup Location Name (Optional)</label>
+                    <input type="text" id="editPickupFacility">
+                </div>
+
+                <div class="form-group">
                     <label for="editPickupDate">Pickup Date</label>
                     <input type="date" id="editPickupDate">
                 </div>
@@ -1358,6 +1391,11 @@
                 <div class="form-group">
                     <label for="editDeliveryCity">Delivery City, State</label>
                     <input type="text" id="editDeliveryCity" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="editDeliveryFacility">Delivery Location Name (Optional)</label>
+                    <input type="text" id="editDeliveryFacility">
                 </div>
 
                 <div class="form-group">
@@ -2411,11 +2449,45 @@
                     let pickupTime = findLabeledTime([/Pick\s*-?\s*Up\s*Time[:\s]*/i]) || findAppointmentTime(pickupNoteZone) || '';
                     let deliveryTime = findLabeledTime([/Delivery\s*Time[:\s]*/i]) || findAppointmentTime(deliveryNoteZone) || '';
 
+                    // ── Facility name ────────────────────────────────
+                    // Each block reads: FACILITY / STREET / CITY ST ZIP.
+                    // We anchor on the STREET line and take the words just
+                    // before it. Anchoring on a street-type word (RD, HWY,
+                    // CO RD, a state route like OK-66) rather than "a number"
+                    // matters: a 5-digit ZIP looks exactly like a street
+                    // number otherwise, and the search lands on the wrong line.
+                    const STREET_LINE = /\b\d+[A-Za-z]?\s+(?:[A-Z0-9#.'\-]+\s+){0,3}(?:RD|ROAD|HWY|HIGHWAY|ST|STREET|AVE|AVENUE|DR|DRIVE|LN|LANE|BLVD|PKWY|PARKWAY|CT|COURT|CIR|CIRCLE|WAY|LOOP|TRL|TRAIL|PL|PLACE|RT|ROUTE|[A-Z]{2}-\d+)\b/g;
+                    // Words that end the note above - never the start of a
+                    // facility name, so they mark where to stop walking back.
+                    const FACILITY_STOP = /^(AT|TO|FROM|AND|OR|FOR|WITH|PER|THE|OF|A|AN|IS|WE|ANY|SENT|GIVE|DONT|USE|BOL|SHIPPER|PAPERWORK|DELIVERY|DELIVER|PICKUP|LOAD|LOADING|UNLOADING|HOURS|YARD)$/i;
+
+                    function findFacilityName(zoneText) {
+                        STREET_LINE.lastIndex = 0;
+                        const streets = [...zoneText.matchAll(STREET_LINE)];
+                        if (!streets.length) return '';
+                        const street = streets[streets.length - 1];
+                        const words = zoneText.slice(0, street.index).trim().split(/\s+/);
+                        const out = [];
+                        // Walk backwards from the street, gathering the name.
+                        for (let i = words.length - 1; i >= 0 && out.length < 5; i--) {
+                            const w = words[i];
+                            if (/\d/.test(w)) break;          // hit the note's trailing time/number
+                            if (FACILITY_STOP.test(w)) break; // hit note wording
+                            out.unshift(w);
+                        }
+                        return out.join(' ').replace(/^[^A-Za-z]+|[^A-Za-z0-9.]+$/g, '').trim();
+                    }
+
+                    const pickupFacility = findFacilityName(pickupNoteZone);
+                    const deliveryFacility = findFacilityName(deliveryNoteZone);
+
                     // Fill in the fields
                     if (carrierName) document.getElementById('pdfCarrierName').value = carrierName;
                     if (carrierPhone) document.getElementById('pdfCarrierPhone').value = carrierPhone;
                     if (rateConNumber) document.getElementById('pdfRateConNumber').value = rateConNumber;
                     if (pickupCity) document.getElementById('pdfPickupCity').value = pickupCity;
+                    if (pickupFacility) document.getElementById('pdfPickupFacility').value = pickupFacility;
+                    if (deliveryFacility) document.getElementById('pdfDeliveryFacility').value = deliveryFacility;
                     if (deliveryCity) document.getElementById('pdfDeliveryCity').value = deliveryCity;
                     if (pickupDate) document.getElementById('pdfPickupDate').value = pickupDate;
                     if (deliveryDate) document.getElementById('pdfDeliveryDate').value = deliveryDate;
@@ -2466,9 +2538,11 @@
                 carrierPhone: document.getElementById('carrierPhone').value.trim(),
                 rateConNumber: rateConNumber,
                 pickupCity: document.getElementById('pickupCity').value.trim(),
+                pickupFacility: document.getElementById('pickupFacility').value.trim(),
                 pickupDate: document.getElementById('pickupDate').value,
                 pickupTime: document.getElementById('pickupTime').value,
                 deliveryCity: document.getElementById('deliveryCity').value.trim(),
+                deliveryFacility: document.getElementById('deliveryFacility').value.trim(),
                 deliveryDate: document.getElementById('deliveryDate').value,
                 deliveryTime: document.getElementById('deliveryTime').value,
                 loadNotes: document.getElementById('loadNotes').value.trim(),
@@ -2505,9 +2579,11 @@
                 carrierPhone: document.getElementById('pdfCarrierPhone').value.trim(),
                 rateConNumber: rateConNumber,
                 pickupCity: document.getElementById('pdfPickupCity').value.trim(),
+                pickupFacility: document.getElementById('pdfPickupFacility').value.trim(),
                 pickupDate: document.getElementById('pdfPickupDate').value,
                 pickupTime: document.getElementById('pdfPickupTime').value,
                 deliveryCity: document.getElementById('pdfDeliveryCity').value.trim(),
+                deliveryFacility: document.getElementById('pdfDeliveryFacility').value.trim(),
                 deliveryDate: document.getElementById('pdfDeliveryDate').value,
                 deliveryTime: document.getElementById('pdfDeliveryTime').value,
                 loadNotes: document.getElementById('pdfLoadNotes').value.trim(),
@@ -2583,9 +2659,11 @@
                 document.getElementById('editCarrierPhone').value = load.carrierPhone || '';
                 document.getElementById('editRateConNumber').value = load.rateConNumber;
                 document.getElementById('editPickupCity').value = load.pickupCity;
+                document.getElementById('editPickupFacility').value = load.pickupFacility || '';
                 document.getElementById('editPickupDate').value = load.pickupDate || '';
                 document.getElementById('editPickupTime').value = load.pickupTime || '';
                 document.getElementById('editDeliveryCity').value = load.deliveryCity;
+                document.getElementById('editDeliveryFacility').value = load.deliveryFacility || '';
                 document.getElementById('editDeliveryDate').value = load.deliveryDate || '';
                 document.getElementById('editDeliveryTime').value = load.deliveryTime || '';
                 document.getElementById('editLoadNotes').value = load.loadNotes || '';
@@ -2607,9 +2685,11 @@
             load.carrierPhone = document.getElementById('editCarrierPhone').value.trim();
             load.rateConNumber = document.getElementById('editRateConNumber').value.trim();
             load.pickupCity = document.getElementById('editPickupCity').value.trim();
+            load.pickupFacility = document.getElementById('editPickupFacility').value.trim();
             load.pickupDate = document.getElementById('editPickupDate').value;
             load.pickupTime = document.getElementById('editPickupTime').value;
             load.deliveryCity = document.getElementById('editDeliveryCity').value.trim();
+            load.deliveryFacility = document.getElementById('editDeliveryFacility').value.trim();
             load.deliveryDate = document.getElementById('editDeliveryDate').value;
             load.deliveryTime = document.getElementById('editDeliveryTime').value;
             load.loadNotes = document.getElementById('editLoadNotes').value.trim();
@@ -2858,6 +2938,8 @@
                 load.carrierPhone,
                 load.pickupCity,
                 load.deliveryCity,
+                load.pickupFacility,
+                load.deliveryFacility,
                 load.loadNotes,
                 load.issueNote,
                 STAGE_LABELS[load.status] || load.status
@@ -2957,11 +3039,13 @@
                         <div class="load-field field-pickup">
                             <div class="load-field-label">Pickup</div>
                             <div class="load-field-value">${escapeHtml(load.pickupCity)}</div>
+                            ${load.pickupFacility ? `<div class="load-facility">${escapeHtml(load.pickupFacility)}</div>` : ''}
                             ${(load.pickupDate || load.pickupTime) ? `<div class="load-field-sub">${formatDateWithWeekday(load.pickupDate)}${load.pickupTime ? ' · ' + formatTime(load.pickupTime) : ''}</div>` : ''}
                         </div>
                         <div class="load-field field-delivery">
                             <div class="load-field-label">Delivery</div>
                             <div class="load-field-value">${escapeHtml(load.deliveryCity)}</div>
+                            ${load.deliveryFacility ? `<div class="load-facility">${escapeHtml(load.deliveryFacility)}</div>` : ''}
                             ${(load.deliveryDate || load.deliveryTime) ? `<div class="load-field-sub">${formatDateWithWeekday(load.deliveryDate)}${load.deliveryTime ? ' · ' + formatTime(load.deliveryTime) : ''}</div>` : ''}
                         </div>
                         ${load.issueNote ? `<span class="issue-flag" title="${escapeHtml(load.issueNote)}">⚠ Problem</span>` : ''}

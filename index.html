@@ -855,6 +855,38 @@
             min-height: 0;
         }
 
+        /* RC chip + PDF link on one row, with the note preview beneath.
+           This column stays shorter than the carrier/pickup columns, so
+           adding the note line doesn't make the card any taller. */
+        .load-rc-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 3px;
+            flex-shrink: 0;
+            max-width: 190px;
+        }
+
+        .load-rc-row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        /* One line, clipped with an ellipsis - the full text is in the
+           tooltip and in the expanded view, so nothing is lost. */
+        .load-note-preview {
+            font-size: 12px;
+            font-weight: 600;
+            color: #999;
+            text-align: center;
+            max-width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: help;
+        }
+
         .load-pdf-link {
             background: none;
             border: none;
@@ -3075,10 +3107,15 @@
                                 <button class="delete" onclick="deleteLoad('${load.id}')">Delete</button>
                             </div>
                         </div>
-                        <div class="load-field field-rate-con">
-                            <div class="load-field-value">${escapeHtml(load.rateConNumber)}</div>
+                        <div class="load-rc-group">
+                            <div class="load-rc-row">
+                                <div class="load-field field-rate-con">
+                                    <div class="load-field-value">${escapeHtml(load.rateConNumber)}</div>
+                                </div>
+                                ${load.pdfData ? `<button class="load-pdf-link" onclick="openPdfViewer('${load.id}', event)" title="View rate con PDF">📎</button>` : ''}
+                            </div>
+                            ${load.loadNotes ? `<div class="load-note-preview" title="${escapeHtml(load.loadNotes)}">${escapeHtml(load.loadNotes)}</div>` : ''}
                         </div>
-                        ${load.pdfData ? `<button class="load-pdf-link" onclick="openPdfViewer('${load.id}', event)" title="View rate con PDF">📎</button>` : ''}
                         <div class="load-field field-carrier">
                             <div class="load-field-label">Carrier</div>
                             <div class="load-field-value">${escapeHtml(load.carrierName)}</div>

@@ -757,6 +757,17 @@
             flex: 0 1 180px;
         }
 
+        /* Carrier name is pre-trimmed to whole words in JS to fit one line -
+           this is just a safety net (an unusually wide font/character can
+           still overflow) so it clips instead of ever wrapping to a 2nd
+           line, which is what looked messy on the card. */
+        .field-carrier .load-field-value {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+        }
+
         .load-carrier-phone {
             font-size: 12px;
             font-weight: 600;
@@ -3217,7 +3228,7 @@
                         </div>
                         <div class="load-field field-carrier">
                             <div class="load-field-label">Carrier</div>
-                            <div class="load-field-value">${escapeHtml(load.carrierName)}</div>
+                            <div class="load-field-value" title="${escapeHtml(load.carrierName)}">${escapeHtml(formatCarrierNameDisplay(load.carrierName))}</div>
                             ${load.carrierPhone ? `<div class="load-carrier-phone">${escapeHtml(load.carrierPhone)}</div>` : ''}
                         </div>
                         <div class="load-field field-pickup">
@@ -3319,6 +3330,28 @@
             if (isNaN(h) || isNaN(m)) return '';
             const dt = new Date(2000, 0, 1, h, m);
             return dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        }
+
+        // Carrier name as shown on the board - kept to one clean line. The
+        // full name (LLC/Inc included) is still what's stored and what shows
+        // in the Edit form; this only affects the card display.
+        const CARRIER_NAME_MAX_LEN = 25;
+
+        function formatCarrierNameDisplay(rawName) {
+            let name = String(rawName || '').trim();
+
+            // The LLC/Inc suffix is never useful on the board - drop it.
+            name = name.replace(/[,.]?\s*(?:L\.?L\.?C\.?|INC(?:ORPORATED)?\.?)\s*$/i, '').trim();
+
+            if (name.length <= CARRIER_NAME_MAX_LEN) return name;
+
+            // Over the limit - drop whole trailing words rather than cutting
+            // a word short, until it fits (or only one word is left).
+            const words = name.split(/\s+/);
+            while (words.length > 1 && words.join(' ').length > CARRIER_NAME_MAX_LEN) {
+                words.pop();
+            }
+            return words.join(' ');
         }
 
         function escapeHtml(text) {

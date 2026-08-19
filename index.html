@@ -336,16 +336,28 @@
             background: #fffafa;
         }
 
+        /* Icon-only badge (no "Problem" text) so it stays small and never
+           steals width from the delivery field next to it - the actual
+           issue note is still one hover away via the title tooltip. */
         .issue-flag {
-            display: inline-block;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
             background: #d32f2f;
             color: white;
-            border-radius: 16px;
-            padding: 7px 12px;
+            border: none;
+            border-radius: 50%;
+            width: 26px;
+            height: 26px;
+            padding: 0;
             font-size: 13px;
             font-weight: 800;
-            white-space: nowrap;
             flex-shrink: 0;
+            cursor: pointer;
+        }
+
+        .issue-flag:hover {
+            background: #b71c1c;
         }
 
         .expanded-section.issue-section .expanded-section-label {
@@ -3241,7 +3253,7 @@
                             <div class="load-field-value">${escapeHtml(load.deliveryCity)}</div>
                             ${(load.deliveryDate || load.deliveryTime) ? `<div class="load-field-sub">${formatDateWithWeekday(load.deliveryDate)}${load.deliveryTime ? ' · ' + formatTime(load.deliveryTime) : ''}</div>` : ''}
                         </div>
-                        ${load.issueNote ? `<span class="issue-flag" title="${escapeHtml(load.issueNote)}">⚠ Problem</span>` : ''}
+                        ${load.issueNote ? `<button type="button" class="issue-flag" onclick="event.stopPropagation(); openIssueModal('${load.id}')" title="${escapeHtml(load.issueNote)}">⚠</button>` : ''}
                         <span class="status-badge-compact ${load.status}">${STAGE_LABELS[load.status] || load.status}</span>
                         <div class="load-stage-nav">
                             <button

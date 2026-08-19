@@ -140,8 +140,10 @@
             display: flex;
         }
 
+        /* Widened from 960px to give the carrier column (below) enough
+           room for a longer name without squeezing pickup/delivery. */
         .container {
-            max-width: 960px;
+            max-width: 1060px;
             margin: 0 auto;
         }
 
@@ -765,8 +767,10 @@
             font-size: 14px;
         }
 
+        /* Fixed width (not shrinkable) so a long name always gets the room
+           it needs and pickup/delivery aren't the ones giving it up. */
         .load-field.field-carrier {
-            flex: 0 1 180px;
+            flex: 0 0 250px;
         }
 
         /* Carrier name is pre-trimmed to whole words in JS to fit one line -
@@ -3347,7 +3351,7 @@
         // Carrier name as shown on the board - kept to one clean line. The
         // full name (LLC/Inc included) is still what's stored and what shows
         // in the Edit form; this only affects the card display.
-        const CARRIER_NAME_MAX_LEN = 25;
+        const CARRIER_NAME_MAX_LEN = 35;
 
         function formatCarrierNameDisplay(rawName) {
             let name = String(rawName || '').trim();

@@ -676,15 +676,45 @@
         .load-card-collapsed {
             padding: 12px 20px;
             display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 16px;
+            flex-direction: column;
+            gap: 8px;
             cursor: pointer;
-            flex-wrap: nowrap;
         }
 
         .load-card-collapsed:hover {
             background: #f9f9f9;
+        }
+
+        /* The actual row of fields - kept separate from the notes row below
+           it so a long note wraps and grows the card taller instead of
+           squeezing this row's fields sideways. */
+        .load-card-main-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: nowrap;
+        }
+
+        /* Full width of the card, so long notes wrap onto multiple lines
+           rather than fighting the fixed-width fields above for space. */
+        .load-card-notes-row {
+            font-size: 13px;
+            font-weight: 600;
+            color: #777;
+            padding-top: 6px;
+            border-top: 1px solid #f0f0f0;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .load-notes-label {
+            font-weight: 800;
+            color: #555;
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.5px;
+            margin-right: 4px;
         }
 
         .load-field {
@@ -855,36 +885,24 @@
             min-height: 0;
         }
 
-        /* RC chip + PDF link on one row, with the note preview beneath.
-           This column stays shorter than the carrier/pickup columns, so
-           adding the note line doesn't make the card any taller. */
+        /* RC chip + PDF link on one row. Fixed width (not just max-width) so
+           it can't be forced wider by a flex-layout quirk - a flex item's
+           default min-width is its content size, which without an explicit
+           width would win out over max-width and push the rest of the row
+           to the right. */
         .load-rc-group {
             display: flex;
             flex-direction: column;
             align-items: center;
             gap: 3px;
             flex-shrink: 0;
-            max-width: 190px;
+            width: 130px;
         }
 
         .load-rc-row {
             display: flex;
             align-items: center;
             gap: 4px;
-        }
-
-        /* One line, clipped with an ellipsis - the full text is in the
-           tooltip and in the expanded view, so nothing is lost. */
-        .load-note-preview {
-            font-size: 12px;
-            font-weight: 600;
-            color: #999;
-            text-align: center;
-            max-width: 100%;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            cursor: help;
         }
 
         .load-pdf-link {
@@ -1095,7 +1113,7 @@
                 margin: 0 auto 6px;
             }
 
-            .load-card-collapsed {
+            .load-card-main-row {
                 gap: 12px 20px;
                 flex-wrap: wrap;
             }
@@ -1405,7 +1423,7 @@
                 <h2>Edit Load</h2>
                 <button class="close-btn" onclick="closeModal('editLoadModal')">&times;</button>
             </div>
-            <form onsubmit="updateLoad(event)">
+            <form id="editLoadForm" onsubmit="updateLoad(event)">
                 <div class="form-group">
                     <label for="editCarrierName">Carrier Name</label>
                     <input type="text" id="editCarrierName" required>
@@ -1433,7 +1451,7 @@
 
                 <div class="form-group">
                     <label for="editPickupTime">Pickup Time (Optional)</label>
-                    <input type="time" id="editPickupTime">
+                    <input type="time" id="editPickupTime" onfocus="defaultTimeToNoon(event)">
                 </div>
 
                 <div class="form-group">
@@ -1448,7 +1466,7 @@
 
                 <div class="form-group">
                     <label for="editDeliveryTime">Delivery Time (Optional)</label>
-                    <input type="time" id="editDeliveryTime">
+                    <input type="time" id="editDeliveryTime" onfocus="defaultTimeToNoon(event)">
                 </div>
 
                 <div class="form-group">
@@ -1849,8 +1867,17 @@
             }
         }
 
+        // Close a modal only on a genuine click on the dark backdrop - not
+        // when a click is merely reported there because a text selection
+        // (e.g. highlighting a note in the Edit modal) started inside the
+        // modal content and the mouse drifted past its edge before release.
+        let modalMouseDownTarget = null;
+        document.addEventListener('mousedown', (e) => {
+            modalMouseDownTarget = e.target;
+        });
+
         window.onclick = function(event) {
-            if (event.target.classList.contains('modal')) {
+            if (event.target.classList.contains('modal') && modalMouseDownTarget === event.target) {
                 closeModal(event.target.id);
             }
         }
@@ -1858,6 +1885,26 @@
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 document.querySelectorAll('.modal.active').forEach(modal => closeModal(modal.id));
+            }
+        });
+
+        // Native time inputs start empty and, when you click into them and
+        // use the up/down arrows, Chrome scrolls from the CURRENT time of
+        // day rather than a sane default. Pre-filling noon on focus (only
+        // when there's no value yet) gives a fixed, predictable starting
+        // point to adjust from instead.
+        function defaultTimeToNoon(e) {
+            if (!e.target.value) e.target.value = '12:00';
+        }
+
+        // Enter should submit the Edit Load form from any field - including
+        // date/time inputs, which don't submit forms on Enter by default in
+        // most browsers. (Enter still inserts a newline in the notes
+        // textarea, as expected.)
+        document.getElementById('editLoadForm').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
+                e.preventDefault();
+                e.target.form.requestSubmit();
             }
         });
 
@@ -3097,6 +3144,7 @@
             container.innerHTML = visibleLoads.map(load => `
                 <div class="load-card ${load.status}${load.issueNote ? ' has-issue' : ''}">
                     <div class="load-card-collapsed" onclick="toggleCardExpand('${load.id}', event)">
+                      <div class="load-card-main-row">
                         <div class="load-card-menu">
                             <button class="menu-btn" onclick="toggleDropdown('${load.id}', event)">⋮</button>
                             <div class="dropdown-menu" data-menu="${load.id}">
@@ -3114,7 +3162,6 @@
                                 </div>
                                 ${load.pdfData ? `<button class="load-pdf-link" onclick="openPdfViewer('${load.id}', event)" title="View rate con PDF">📎</button>` : ''}
                             </div>
-                            ${load.loadNotes ? `<div class="load-note-preview" title="${escapeHtml(load.loadNotes)}">${escapeHtml(load.loadNotes)}</div>` : ''}
                         </div>
                         <div class="load-field field-carrier">
                             <div class="load-field-label">Carrier</div>
@@ -3154,6 +3201,8 @@
                                 >→</button>
                             `}
                         </div>
+                      </div>
+                      ${load.loadNotes ? `<div class="load-card-notes-row"><span class="load-notes-label">Notes:</span> ${escapeHtml(load.loadNotes)}</div>` : ''}
                     </div>
                     <div class="load-card-expanded ${expandedLoadId === load.id ? 'active' : ''}">
                         ${load.issueNote ? `

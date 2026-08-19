@@ -1416,6 +1416,27 @@
         </div>
     </div>
 
+    <!-- Notes Modal -->
+    <div class="modal" id="notesModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Load Notes</h2>
+                <button class="close-btn" onclick="closeModal('notesModal')">&times;</button>
+            </div>
+            <form id="notesForm" onsubmit="saveNotes(event)">
+                <div class="form-group">
+                    <label for="notesText">Notes</label>
+                    <textarea id="notesText" placeholder="e.g., Fragile items, Requires signature"></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="closeModal('notesModal')">Cancel</button>
+                    <button type="submit" class="btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Edit Load Modal -->
     <div class="modal" id="editLoadModal">
         <div class="modal-content">
@@ -1538,6 +1559,7 @@
         let loads = [];
         let editingLoadId = null;
         let issuingLoadId = null;
+        let notesLoadId = null;
         let expandedLoadId = null;
         let currentTab = 'active';
         let currentSort = 'rateCon';
@@ -1857,6 +1879,9 @@
             } else if (modalId === 'issueModal') {
                 resetForm('issueForm');
                 issuingLoadId = null;
+            } else if (modalId === 'notesModal') {
+                resetForm('notesForm');
+                notesLoadId = null;
             } else if (modalId === 'pdfViewerModal') {
                 // Release the blob URL rather than leaking it.
                 document.getElementById('pdfViewerFrame').src = '';
@@ -2965,33 +2990,38 @@
             );
         }
 
-        async function duplicateLoad(loadId) {
-            const index = loads.findIndex(l => l.id === loadId);
-            if (index === -1) return;
-
-            const original = loads[index];
-            const copy = {
-                ...original,
-                id: generateId(),
-                status: 'dispatched',
-                // A fresh copy starts clean - the original's breakdown or
-                // delay doesn't apply to a brand new load.
-                issueNote: '',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
-            };
-
-            loads.splice(index + 1, 0, copy);
-            renderLoads();
+        // ── Editing notes straight from the board ────────────────────
+        function openNotesModal(loadId) {
+            const load = loads.find(l => l.id === loadId);
+            if (!load) return;
+            notesLoadId = loadId;
+            document.getElementById('notesText').value = load.loadNotes || '';
+            document.getElementById('notesModal').classList.add('active');
             closeDropdown(loadId);
+            setTimeout(() => document.getElementById('notesText').focus(), 50);
+        }
+
+        async function saveNotes(e) {
+            e.preventDefault();
+            const load = loads.find(l => l.id === notesLoadId);
+            if (!load) {
+                closeModal('notesModal');
+                return;
+            }
+
+            const previous = load.loadNotes || '';
+            load.loadNotes = document.getElementById('notesText').value.trim();
+            load.updatedAt = new Date().toISOString();
+            renderLoads();
+            closeModal('notesModal');
 
             try {
-                await apiCreateLoad(copy);
+                await apiUpdateLoad(load);
             } catch (err) {
-                console.error('Failed to duplicate load:', err);
-                loads = loads.filter(l => l.id !== copy.id);
+                console.error('Failed to save notes:', err);
+                load.loadNotes = previous;
                 renderLoads();
-                alert('Could not duplicate the load - check your connection and try again.');
+                alert('Could not save the notes - check your connection and try again.');
             }
         }
 
@@ -3171,7 +3201,7 @@
                             <button class="menu-btn" onclick="toggleDropdown('${load.id}', event)">⋮</button>
                             <div class="dropdown-menu" data-menu="${load.id}">
                                 <button onclick="openEditModal('${load.id}')">Edit</button>
-                                <button onclick="duplicateLoad('${load.id}')">Duplicate</button>
+                                <button onclick="openNotesModal('${load.id}')">${load.loadNotes ? '📝 Edit Notes' : '📝 Add Notes'}</button>
                                 <button onclick="openIssueModal('${load.id}')">${load.issueNote ? '⚠ Edit Problem' : '⚠ Flag Problem'}</button>
                                 ${load.issueNote ? `<button onclick="clearIssue('${load.id}')">✓ Clear Problem</button>` : ''}
                                 <button class="delete" onclick="deleteLoad('${load.id}')">Delete</button>

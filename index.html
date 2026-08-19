@@ -443,6 +443,14 @@
             padding: 16px 24px;
         }
 
+        /* The carrier column's fixed width was sized for the normal 15px
+           text - bumped up to match the larger wallboard font above, so a
+           name that fit fine on the regular board doesn't start getting
+           clipped just because wallboard mode made the text bigger. */
+        body.wallboard-mode .load-field.field-carrier {
+            flex: 0 0 300px;
+        }
+
         #autoScrollSpeed option {
             background: white;
             color: #1a3a52;
@@ -740,6 +748,23 @@
 
         .load-card-collapsed:hover {
             background: #f9f9f9;
+        }
+
+        /* While auto-scrolling, cards are constantly moving past whatever
+           the pointer happens to be resting on (a mouse left on the TV/
+           projector setup, a remote's on-screen cursor, etc.), so each one
+           flicks in and out of :hover as it passes - and the hover shadow's
+           0.3s transition means several of those overlap mid-animation at
+           once. That's what showed up as shimmering/staticky cards during
+           the scroll. Freezing the hover styling for the duration removes it. */
+        body.auto-scroll-active .load-card,
+        body.auto-scroll-active .load-card:hover {
+            transition: none;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        body.auto-scroll-active .load-card-collapsed:hover {
+            background: white;
         }
 
         /* The actual row of fields - kept separate from the notes row below
@@ -1734,6 +1759,7 @@
             const btn = document.getElementById('autoScrollBtn');
             btn.classList.toggle('scrolling', autoScrollActive);
             btn.textContent = autoScrollActive ? '⏸ Stop Scroll' : '▶ Auto Scroll';
+            document.body.classList.toggle('auto-scroll-active', autoScrollActive);
 
             if (autoScrollActive) {
                 // Say so plainly rather than appearing to do nothing.

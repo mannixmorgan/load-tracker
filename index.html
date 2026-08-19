@@ -2069,14 +2069,29 @@
 
                     const WINDOW = 150; // chars to search after a label
 
+                    // Phone numbers in this broker's rate cons sometimes carry
+                    // a dialing extension right after the number, e.g.
+                    // "331-457-4888,103" - a comma followed by 3-4 digits,
+                    // no space, every time. Capture it as its own group so it
+                    // can be re-attached in that exact format wherever a
+                    // phone number is pulled from the text.
+                    const PHONE_PATTERN = /(\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})(?:\s*,\s*(\d{3,4}))?/;
+                    function matchPhoneWithExt(searchText) {
+                        const m = searchText.match(PHONE_PATTERN);
+                        if (!m) return null;
+                        const base = m[1].trim();
+                        return m[2] ? `${base},${m[2]}` : base;
+                    }
+
                     // Strategy 1: this specific template lists the carrier as
                     // "COMPANY NAME * Contact: NAME Phone: NUMBER" with no
                     // "Carrier:" label at all. We anchor on "Contact:" and
                     // look BACKWARD a short distance for the company name,
-                    // then forward for the phone - anchoring on a fixed
-                    // point (rather than searching the whole document) is
-                    // what keeps this from ever grabbing the broker's own
-                    // "Bill To" phone/email, which appear earlier in the doc.
+                    // then forward for the contact's name and phone -
+                    // anchoring on a fixed point (rather than searching the
+                    // whole document) is what keeps this from ever grabbing
+                    // the broker's own "Bill To" name/phone/email, which
+                    // appear earlier in the doc.
                     const contactMatch = /Contact:/i.exec(text);
                     if (contactMatch) {
                         let before = text.slice(Math.max(0, contactMatch.index - 100), contactMatch.index);
@@ -2097,9 +2112,20 @@
                         }
 
                         const afterContact = text.slice(contactMatch.index + contactMatch[0].length, contactMatch.index + contactMatch[0].length + 60);
-                        const phoneNear = afterContact.match(/\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
+
+                        // The contact's name is whatever comes directly after
+                        // "Contact:" - a first name, or a first and last name -
+                        // stopping at the next label/phone number or a double
+                        // space (this template's usual column break).
+                        let contactName = '';
+                        const contactNameMatch = afterContact.match(/^\s*([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)?)(?=\s{2,}|\s+(?:Phone|Tel|Cell|Email)|\s+\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}|$)/i);
+                        if (contactNameMatch) {
+                            contactName = contactNameMatch[1].trim();
+                        }
+
+                        const phoneNear = matchPhoneWithExt(afterContact);
                         if (phoneNear) {
-                            carrierPhone = phoneNear[0].trim();
+                            carrierPhone = contactName ? `${phoneNear} - ${contactName}` : phoneNear;
                         }
                     }
 
@@ -2135,10 +2161,6 @@
 
                     // Carrier phone - only fall back to generic label search
                     // if the anchored carrier-block match above didn't find one.
-                    function findPhone(searchText) {
-                        const m = searchText.match(/\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
-                        return m ? m[0].trim() : null;
-                    }
                     const phoneLabels = [
                         /Carrier\s*Phone[:\s]*/i,
                         /Dispatch\s*Phone[:\s]*/i,
@@ -2148,7 +2170,7 @@
                         for (const pattern of phoneLabels) {
                             const m = pattern.exec(text);
                             if (m) {
-                                const found = findPhone(text.slice(m.index + m[0].length, m.index + m[0].length + 40));
+                                const found = matchPhoneWithExt(text.slice(m.index + m[0].length, m.index + m[0].length + 40));
                                 if (found) {
                                     carrierPhone = found;
                                     break;

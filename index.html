@@ -400,6 +400,49 @@
             background: rgba(255, 255, 255, 0.25);
         }
 
+        #wallboardBtn.active {
+            background: #26A69A;
+            color: white;
+        }
+
+        #wallboardBtn.active:hover {
+            background: #1f8e83;
+        }
+
+        /* TV/projector mode: strip out everything but the board itself so
+           the loads take up the whole screen, and size things up a bit
+           since it's meant to be read from across a room. Entering this
+           also auto-starts the scroll (see toggleWallboardMode), so there's
+           one button for "put this on the TV" instead of two.
+           requestFullscreen() only affects real screen space, so this class
+           is what actually reclaims the header/search real estate. */
+        body.wallboard-mode header,
+        body.wallboard-mode .search-row,
+        body.wallboard-mode .search-status {
+            display: none;
+        }
+
+        body.wallboard-mode .container {
+            max-width: 100%;
+        }
+
+        body.wallboard-mode .load-field-value {
+            font-size: 17px;
+        }
+
+        body.wallboard-mode .load-field-label {
+            font-size: 11px;
+        }
+
+        body.wallboard-mode .status-badge-compact {
+            font-size: 14px;
+            padding: 8px 16px;
+        }
+
+        body.wallboard-mode .load-card-collapsed {
+            padding: 16px 24px;
+        }
+
         #autoScrollSpeed option {
             background: white;
             color: #1a3a52;
@@ -1228,6 +1271,7 @@
                 <button class="tab-btn" data-tab="pod-received" onclick="switchTab('pod-received')">POD Received <span class="tab-count" id="tabCountPodReceived"></span></button>
                 <div class="board-controls">
                     <button class="tab-btn clean-all-btn" id="cleanAllBtn" onclick="cleanAllPodReceived()" style="display: none;">🧹 Clean All</button>
+                    <button class="tab-btn" id="wallboardBtn" onclick="toggleWallboardMode()" title="Full screen + auto scroll, for a TV or projector">⛶ Full Screen</button>
                     <button class="tab-btn" id="autoScrollBtn" onclick="toggleAutoScroll()">▶ Auto Scroll</button>
                     <select id="autoScrollSpeed" title="Auto scroll speed">
                         <option value="15">Slow</option>
@@ -1673,9 +1717,13 @@
                     if (autoScrollActive) window.scrollTo(0, 0);
                 }, AUTO_SCROLL_PAUSE_MS);
             } else {
-                // Fractional position scrolled every frame - this is what
-                // makes the crawl look smooth instead of stepping 1px at a time.
-                window.scrollTo(0, autoScrollPos);
+                // autoScrollPos itself stays fractional (that's what keeps
+                // the math smooth frame to frame), but the position actually
+                // handed to the browser is rounded to a whole pixel - a
+                // sub-pixel scroll position makes text re-render at a
+                // fractional offset every frame, which is what showed up as
+                // shimmering/staticky text over a screen-mirrored TV feed.
+                window.scrollTo(0, Math.round(autoScrollPos));
             }
 
             autoScrollFrame = requestAnimationFrame(autoScrollStep);
@@ -1701,6 +1749,80 @@
                 autoScrollFrame = null;
             }
         }
+
+        // ── Wallboard mode (full screen + auto scroll for a TV/projector) ──
+        // One button that puts the board on the whole screen, strips out
+        // everything but the load cards, and starts the scroll - so putting
+        // this on a TV while editing from a laptop is a single click rather
+        // than "go full screen" plus "start scrolling" as two steps.
+        let wallboardModeActive = false;
+
+        function isFullscreenActive() {
+            return !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
+        }
+
+        function requestFullscreenCompat() {
+            const el = document.documentElement;
+            const fn = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+            return fn ? fn.call(el) : Promise.reject(new Error('Full screen is not supported in this browser.'));
+        }
+
+        function exitFullscreenCompat() {
+            const fn = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+            return fn ? fn.call(document) : Promise.resolve();
+        }
+
+        function enterWallboardMode() {
+            wallboardModeActive = true;
+            document.body.classList.add('wallboard-mode');
+            const btn = document.getElementById('wallboardBtn');
+            btn.classList.add('active');
+            btn.textContent = '⛶ Exit Full Screen';
+            if (!autoScrollActive) toggleAutoScroll();
+        }
+
+        function exitWallboardMode() {
+            wallboardModeActive = false;
+            document.body.classList.remove('wallboard-mode');
+            const btn = document.getElementById('wallboardBtn');
+            btn.classList.remove('active');
+            btn.textContent = '⛶ Full Screen';
+            if (autoScrollActive) toggleAutoScroll();
+        }
+
+        async function toggleWallboardMode() {
+            if (wallboardModeActive) {
+                if (isFullscreenActive()) {
+                    try {
+                        await exitFullscreenCompat();
+                    } catch (err) {
+                        console.error('Failed to exit full screen:', err);
+                    }
+                }
+                exitWallboardMode();
+                return;
+            }
+
+            try {
+                await requestFullscreenCompat();
+            } catch (err) {
+                // Some browsers/embedded views don't allow real full screen -
+                // still switch to the stripped-down scrolling layout rather
+                // than doing nothing.
+                console.warn('Full screen not available, using wallboard layout without it:', err);
+            }
+            enterWallboardMode();
+        }
+
+        // Catches Esc or the browser's own "exit full screen" control, not
+        // just our button, so wallboard mode always stays in sync.
+        ['fullscreenchange', 'webkitfullscreenchange', 'msfullscreenchange'].forEach((evt) => {
+            document.addEventListener(evt, () => {
+                if (!isFullscreenActive() && wallboardModeActive) {
+                    exitWallboardMode();
+                }
+            });
+        });
 
         // ── Sorting ──────────────────────────────────────────────────
         // Default order is rate con number, highest first. Rate cons from

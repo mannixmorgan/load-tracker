@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Load Tracker</title>
+    <link rel="icon" type="image/png" href="load-tracker-truck.png">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-auth-compat.js"></script>
@@ -581,6 +582,17 @@
             border: 2px dashed #ddd;
             text-align: center;
             transition: all 0.2s ease;
+        }
+
+        /* Stays hidden until a file is picked or dropped - see
+           processPdfFile - so the modal opens showing just the upload
+           step instead of a long form up front. */
+        .pdf-details-section {
+            display: none;
+        }
+
+        .pdf-details-section.active {
+            display: block;
         }
 
         .pdf-upload-section.drag-over {
@@ -1352,8 +1364,7 @@
                 </div>
 
                 <div class="header-actions">
-                    <button class="btn-primary" onclick="openAddLoadModal()">+ Add Load</button>
-                    <button class="btn-secondary" onclick="openPdfModal()">📄 PDF</button>
+                    <button class="btn-primary" onclick="openPdfModal()">+ Add Load</button>
                 </div>
             </header>
 
@@ -1406,76 +1417,10 @@
     </div>
 
     <!-- Add Load Modal -->
-    <div class="modal" id="addLoadModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Add New Load</h2>
-                <button class="close-btn" onclick="closeModal('addLoadModal')">&times;</button>
-            </div>
-            <form id="addLoadForm" onsubmit="addLoad(event)">
-                <div class="form-group">
-                    <label for="carrierName">Carrier Name *</label>
-                    <input type="text" id="carrierName" required placeholder="e.g., ABC Trucking">
-                </div>
-
-                <div class="form-group">
-                    <label for="carrierPhone">Carrier Phone (Optional)</label>
-                    <input type="tel" id="carrierPhone" placeholder="e.g., (555) 123-4567">
-                </div>
-
-                <div class="form-group">
-                    <label for="rateConNumber">Rate Con Number *</label>
-                    <input type="text" id="rateConNumber" required placeholder="e.g., RC-2024-001">
-                </div>
-
-                <div class="form-group">
-                    <label for="pickupCity">Pickup City, State *</label>
-                    <input type="text" id="pickupCity" required placeholder="e.g., Denver, CO">
-                </div>
-
-                <div class="form-group">
-                    <label for="pickupDate">Pickup Date</label>
-                    <input type="date" id="pickupDate">
-                </div>
-
-                <div class="form-group">
-                    <label for="pickupTime">Pickup Time (Optional)</label>
-                    <input type="time" id="pickupTime">
-                </div>
-
-                <div class="form-group">
-                    <label for="deliveryCity">Delivery City, State *</label>
-                    <input type="text" id="deliveryCity" required placeholder="e.g., Chicago, IL">
-                </div>
-
-                <div class="form-group">
-                    <label for="deliveryDate">Delivery Date</label>
-                    <input type="date" id="deliveryDate">
-                </div>
-
-                <div class="form-group">
-                    <label for="deliveryTime">Delivery Time (Optional)</label>
-                    <input type="time" id="deliveryTime">
-                </div>
-
-                <div class="form-group">
-                    <label for="loadNotes">Load Notes (Optional)</label>
-                    <textarea id="loadNotes" placeholder="e.g., Fragile items, Requires signature"></textarea>
-                </div>
-
-                <div class="form-actions">
-                    <button type="button" class="btn-secondary" onclick="closeModal('addLoadModal')">Cancel</button>
-                    <button type="submit" class="btn-primary">Add Load</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- PDF Import Modal -->
     <div class="modal" id="pdfModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Import from PDF</h2>
+                <h2>Add Load</h2>
                 <button class="close-btn" onclick="closeModal('pdfModal')">&times;</button>
             </div>
             <form id="pdfForm" onsubmit="processPdf(event)">
@@ -1485,59 +1430,68 @@
                     <div class="extraction-status" id="extractionStatus"></div>
                 </div>
 
-                <div class="form-group">
-                    <label for="pdfCarrierName">Carrier Name *</label>
-                    <input type="text" id="pdfCarrierName" required placeholder="e.g., ABC Trucking">
-                </div>
-
-                <div class="form-group">
-                    <label for="pdfCarrierPhone">Carrier Phone (Optional)</label>
-                    <input type="tel" id="pdfCarrierPhone" placeholder="e.g., (555) 123-4567">
-                </div>
-
-                <div class="form-group">
-                    <label for="pdfRateConNumber">Rate Con Number *</label>
-                    <input type="text" id="pdfRateConNumber" required placeholder="e.g., RC-2024-001">
-                </div>
-
-                <div class="form-group">
-                    <label for="pdfPickupCity">Pickup City, State *</label>
-                    <input type="text" id="pdfPickupCity" required placeholder="e.g., Denver, CO">
-                </div>
-
-                <div class="form-group">
-                    <label for="pdfPickupDate">Pickup Date</label>
-                    <input type="date" id="pdfPickupDate">
-                </div>
-
-                <div class="form-group">
-                    <label for="pdfPickupTime">Pickup Time (Optional)</label>
-                    <input type="time" id="pdfPickupTime">
-                </div>
-
-                <div class="form-group">
-                    <label for="pdfDeliveryCity">Delivery City, State *</label>
-                    <input type="text" id="pdfDeliveryCity" required placeholder="e.g., Chicago, IL">
-                </div>
-
-                <div class="form-group">
-                    <label for="pdfDeliveryDate">Delivery Date</label>
-                    <input type="date" id="pdfDeliveryDate">
-                </div>
-
-                <div class="form-group">
-                    <label for="pdfDeliveryTime">Delivery Time (Optional)</label>
-                    <input type="time" id="pdfDeliveryTime">
-                </div>
-
-                <div class="form-group">
-                    <label for="pdfLoadNotes">Load Notes (Optional)</label>
-                    <textarea id="pdfLoadNotes" placeholder="Notes from PDF"></textarea>
-                </div>
-
-                <div class="form-actions">
+                <!-- Only Cancel is offered until a file is picked - the
+                     detail fields only matter once there's something to
+                     review, so they stay out of the way until then. -->
+                <div class="form-actions" id="pdfPickerActions">
                     <button type="button" class="btn-secondary" onclick="closeModal('pdfModal')">Cancel</button>
-                    <button type="submit" class="btn-primary">Create Load</button>
+                </div>
+
+                <div id="pdfDetailsSection" class="pdf-details-section">
+                    <div class="form-group">
+                        <label for="pdfCarrierName">Carrier Name *</label>
+                        <input type="text" id="pdfCarrierName" required placeholder="e.g., ABC Trucking">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="pdfCarrierPhone">Carrier Phone (Optional)</label>
+                        <input type="tel" id="pdfCarrierPhone" placeholder="e.g., (555) 123-4567">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="pdfRateConNumber">Rate Con Number *</label>
+                        <input type="text" id="pdfRateConNumber" required placeholder="e.g., RC-2024-001">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="pdfPickupCity">Pickup City, State *</label>
+                        <input type="text" id="pdfPickupCity" required placeholder="e.g., Denver, CO">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="pdfPickupDate">Pickup Date</label>
+                        <input type="date" id="pdfPickupDate">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="pdfPickupTime">Pickup Time (Optional)</label>
+                        <input type="time" id="pdfPickupTime">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="pdfDeliveryCity">Delivery City, State *</label>
+                        <input type="text" id="pdfDeliveryCity" required placeholder="e.g., Chicago, IL">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="pdfDeliveryDate">Delivery Date</label>
+                        <input type="date" id="pdfDeliveryDate">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="pdfDeliveryTime">Delivery Time (Optional)</label>
+                        <input type="time" id="pdfDeliveryTime">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="pdfLoadNotes">Load Notes (Optional)</label>
+                        <textarea id="pdfLoadNotes" placeholder="Notes from PDF"></textarea>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn-secondary" onclick="closeModal('pdfModal')">Cancel</button>
+                        <button type="submit" class="btn-primary">Create Load</button>
+                    </div>
                 </div>
             </form>
         </div>
@@ -2269,11 +2223,6 @@
             return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
         }
 
-        function openAddLoadModal() {
-            document.getElementById('addLoadModal').classList.add('active');
-            document.getElementById('carrierName').focus();
-        }
-
         function openPdfModal() {
             document.getElementById('pdfModal').classList.add('active');
         }
@@ -2285,11 +2234,11 @@
 
         function closeModal(modalId) {
             document.getElementById(modalId).classList.remove('active');
-            if (modalId === 'addLoadModal') {
-                resetForm('addLoadForm');
-            } else if (modalId === 'pdfModal') {
+            if (modalId === 'pdfModal') {
                 resetForm('pdfForm');
                 pendingPdfAttachment = null;
+                document.getElementById('pdfDetailsSection').classList.remove('active');
+                document.getElementById('pdfPickerActions').style.display = '';
                 const statusDiv = document.getElementById('extractionStatus');
                 statusDiv.className = 'extraction-status';
                 statusDiv.textContent = '';
@@ -2476,6 +2425,12 @@
         }
 
         function processPdfFile(file) {
+            // A file has been picked - reveal the detail fields (and swap
+            // the picker's bare Cancel button for the full Cancel/Create
+            // Load pair) regardless of how extraction turns out.
+            document.getElementById('pdfDetailsSection').classList.add('active');
+            document.getElementById('pdfPickerActions').style.display = 'none';
+
             const statusDiv = document.getElementById('extractionStatus');
             statusDiv.className = 'extraction-status';
             statusDiv.textContent = 'Reading PDF…';
@@ -3083,45 +3038,6 @@
 
                 reader.readAsArrayBuffer(file);
             });
-        }
-
-        async function addLoad(e) {
-            e.preventDefault();
-
-            const rateConNumber = document.getElementById('rateConNumber').value.trim();
-            // Ask before creating a second load with the same rate con.
-            // Bail out WITHOUT closing the modal so the number can be fixed.
-            if (!confirmIfDuplicate(rateConNumber)) return;
-
-            const load = {
-                id: generateId(),
-                carrierName: document.getElementById('carrierName').value.trim(),
-                carrierPhone: document.getElementById('carrierPhone').value.trim(),
-                rateConNumber: rateConNumber,
-                pickupCity: document.getElementById('pickupCity').value.trim(),
-                pickupDate: document.getElementById('pickupDate').value,
-                pickupTime: document.getElementById('pickupTime').value,
-                deliveryCity: document.getElementById('deliveryCity').value.trim(),
-                deliveryDate: document.getElementById('deliveryDate').value,
-                deliveryTime: document.getElementById('deliveryTime').value,
-                loadNotes: document.getElementById('loadNotes').value.trim(),
-                status: 'dispatched',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
-            };
-
-            loads.unshift(load);
-            renderLoads();
-            closeModal('addLoadModal');
-
-            try {
-                await apiCreateLoad(load);
-            } catch (err) {
-                console.error('Failed to save load:', err);
-                loads = loads.filter(l => l.id !== load.id);
-                renderLoads();
-                alert('Could not save the load - check your connection and try again.');
-            }
         }
 
         async function processPdf(e) {

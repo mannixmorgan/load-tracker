@@ -1020,7 +1020,7 @@
             flex-shrink: 0;
         }
 
-        /* Only rendered in Manual sort mode. A dedicated grab area (rather
+        /* Always present next to the ⋮ menu. A dedicated grab area (rather
            than making the whole card draggable) so an ordinary click/tap
            on the card never gets mistaken for the start of a drag. */
         .drag-handle {
@@ -1358,7 +1358,6 @@
                             <option value="rateCon">Rate Con # (newest first)</option>
                             <option value="pickupDate">Pickup date (soonest first)</option>
                             <option value="deliveryDate">Delivery date (soonest first)</option>
-                            <option value="manual">Manual (drag to reorder)</option>
                         </select>
                     </div>
                 </div>
@@ -1709,6 +1708,12 @@
         let expandedLoadId = null;
         let currentTab = 'active';
         let currentSort = 'rateCon';
+        // Dragging a card (via the grab handle next to the ⋮ menu) is
+        // always available, regardless of which sort is picked below - it
+        // switches the board to a manually-set order on the spot. Picking
+        // a sort from the dropdown again cancels the override and goes
+        // back to that automatic ordering.
+        let manualOrderActive = false;
 
         function switchTab(tab) {
             currentTab = tab;
@@ -1720,30 +1725,8 @@
 
         function changeSort(sort) {
             currentSort = sort;
+            manualOrderActive = false;
             renderLoads();
-            if (sort === 'manual') backfillManualOrder();
-        }
-
-        // The very first time Manual sort is used, none of the existing
-        // loads have a manualOrder yet - rather than leaving them to fall
-        // back silently (see compareManualOrder), seed every load right
-        // then with an order matching the normal rate-con-descending sort,
-        // across every tab, so Manual mode starts out already organized
-        // instead of needing every load dragged once just to "activate" it.
-        // Only runs when NO load has a manualOrder yet, so it can never
-        // undo real dragging done in an earlier session.
-        async function backfillManualOrder() {
-            if (!loads.length || loads.some(l => typeof l.manualOrder === 'number')) return;
-
-            const ordered = [...loads].sort(compareRateConDesc);
-            ordered.forEach((load, index) => { load.manualOrder = index * 10; });
-            renderLoads();
-
-            try {
-                await Promise.all(ordered.map(l => apiUpdateLoad({ id: l.id, manualOrder: l.manualOrder })));
-            } catch (err) {
-                console.error('Failed to seed manual order for existing loads:', err);
-            }
         }
 
         // ── Auto-scroll (wallboard / projector mode) ──────────────────
@@ -1979,12 +1962,12 @@
 
         function sortLoads(list) {
             const sorted = [...list];
-            if (currentSort === 'pickupDate') {
+            if (manualOrderActive) {
+                sorted.sort(compareManualOrder);
+            } else if (currentSort === 'pickupDate') {
                 sorted.sort(compareByDateAsc('pickupDate'));
             } else if (currentSort === 'deliveryDate') {
                 sorted.sort(compareByDateAsc('deliveryDate'));
-            } else if (currentSort === 'manual') {
-                sorted.sort(compareManualOrder);
             } else {
                 sorted.sort(compareRateConDesc);
             }
@@ -2004,14 +1987,15 @@
             };
         }
 
-        // ── Drag to reorder (manual sort) ─────────────────────────────
-        // Only active when "Manual" is the chosen sort - dragging while any
-        // other sort is selected would just get undone by that sort on the
-        // very next render, which would be confusing rather than useful.
-        // The card itself is the drag source (so the whole row moves), but
-        // dragstart bails out unless the gesture actually started on the
-        // grip handle - that's what keeps an ordinary click/tap on the card
-        // from ever being mistaken for a drag.
+        // ── Drag to reorder ────────────────────────────────────────────
+        // The grab handle next to the ⋮ menu is always there - grabbing it
+        // and dropping a card switches the board to a manually-set order
+        // on the spot (see manualOrderActive), overriding whatever sort was
+        // picked until a sort is chosen again. The card itself is the drag
+        // source (so the whole row moves), but dragstart bails out unless
+        // the gesture actually started on the grip handle - that's what
+        // keeps an ordinary click/tap on the card from ever being mistaken
+        // for a drag.
         let draggingLoadId = null;
 
         function handleCardDragStart(e, loadId) {
@@ -2068,9 +2052,11 @@
             // future drop between two existing positions without a full
             // renumber every time (not needed yet, but costs nothing now).
             const previousOrders = new Map(visible.map(l => [l.id, l.manualOrder]));
+            const wasManualOrderActive = manualOrderActive;
             visible.forEach((load, index) => {
                 load.manualOrder = index * 10;
             });
+            manualOrderActive = true;
 
             renderLoads();
 
@@ -2080,6 +2066,7 @@
             } catch (err) {
                 console.error('Failed to save the new order:', err);
                 changed.forEach(l => { l.manualOrder = previousOrders.get(l.id); });
+                manualOrderActive = wasManualOrderActive;
                 renderLoads();
                 alert('Could not save the new order - check your connection and try again.');
             }
@@ -3562,14 +3549,12 @@
                 return;
             }
 
-            const isManualSort = currentSort === 'manual';
-
             container.innerHTML = visibleLoads.map(load => `
                 <div class="load-card ${load.status}${load.issueNote ? ' has-issue' : ''}" data-load-id="${load.id}"
-                    ${isManualSort ? `draggable="true" ondragstart="handleCardDragStart(event, '${load.id}')" ondragover="handleCardDragOver(event, '${load.id}')" ondragleave="handleCardDragLeave(event, '${load.id}')" ondrop="handleCardDrop(event, '${load.id}')" ondragend="handleCardDragEnd(event)"` : ''}>
+                    draggable="true" ondragstart="handleCardDragStart(event, '${load.id}')" ondragover="handleCardDragOver(event, '${load.id}')" ondragleave="handleCardDragLeave(event, '${load.id}')" ondrop="handleCardDrop(event, '${load.id}')" ondragend="handleCardDragEnd(event)">
                     <div class="load-card-collapsed" onclick="toggleCardExpand('${load.id}', event)">
                       <div class="load-card-main-row">
-                        ${isManualSort ? `<div class="drag-handle" title="Drag to reorder" onclick="event.stopPropagation()">⠿</div>` : ''}
+                        <div class="drag-handle" title="Drag to reorder" onclick="event.stopPropagation()">⠿</div>
                         <div class="load-card-menu">
                             <button class="menu-btn" onclick="toggleDropdown('${load.id}', event)">⋮</button>
                             <div class="dropdown-menu" data-menu="${load.id}">

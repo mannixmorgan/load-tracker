@@ -1020,6 +1020,40 @@
             flex-shrink: 0;
         }
 
+        /* Only rendered in Manual sort mode. A dedicated grab area (rather
+           than making the whole card draggable) so an ordinary click/tap
+           on the card never gets mistaken for the start of a drag. */
+        .drag-handle {
+            flex-shrink: 0;
+            width: 24px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #bbb;
+            font-size: 18px;
+            line-height: 1;
+            cursor: grab;
+            border-radius: 6px;
+        }
+
+        .drag-handle:hover {
+            color: #888;
+            background: #f0f0f0;
+        }
+
+        .drag-handle:active {
+            cursor: grabbing;
+        }
+
+        .load-card.dragging {
+            opacity: 0.4;
+        }
+
+        .load-card.drag-over {
+            box-shadow: inset 0 3px 0 0 #1a3a52;
+        }
+
         .menu-btn {
             background: none;
             border: none;
@@ -1309,6 +1343,7 @@
                             <option value="rateCon">Rate Con # (newest first)</option>
                             <option value="pickupDate">Pickup date (soonest first)</option>
                             <option value="deliveryDate">Delivery date (soonest first)</option>
+                            <option value="manual">Manual (drag to reorder)</option>
                         </select>
                     </div>
                 </div>
@@ -1891,16 +1926,132 @@
             };
         }
 
+        // Manual order is a plain number saved per load (see the drag-to-
+        // reorder handlers below). A load that's never been dragged has no
+        // manualOrder yet, so it falls back to the rate-con ordering rather
+        // than floating to the top or bottom arbitrarily.
+        function compareManualOrder(a, b) {
+            const hasA = typeof a.manualOrder === 'number';
+            const hasB = typeof b.manualOrder === 'number';
+            if (hasA && hasB && a.manualOrder !== b.manualOrder) return a.manualOrder - b.manualOrder;
+            if (hasA && !hasB) return -1;
+            if (!hasA && hasB) return 1;
+            return compareRateConDesc(a, b);
+        }
+
         function sortLoads(list) {
             const sorted = [...list];
             if (currentSort === 'pickupDate') {
                 sorted.sort(compareByDateAsc('pickupDate'));
             } else if (currentSort === 'deliveryDate') {
                 sorted.sort(compareByDateAsc('deliveryDate'));
+            } else if (currentSort === 'manual') {
+                sorted.sort(compareManualOrder);
             } else {
                 sorted.sort(compareRateConDesc);
             }
             return sorted;
+        }
+
+        // Which loads belong in the current view - shared between renderLoads
+        // and the drag-to-reorder handlers so both agree on "what's on screen".
+        function getCurrentViewFilter(searchQuery) {
+            return function (load) {
+                // While searching, look across every tab - hunting for a rate
+                // con is useless if it's hidden just because it's already
+                // been delivered.
+                if (searchQuery) return loadMatchesSearch(load, searchQuery);
+                if (currentTab === 'active') return MAIN_TAB_STAGES.includes(load.status);
+                return load.status === currentTab;
+            };
+        }
+
+        // ── Drag to reorder (manual sort) ─────────────────────────────
+        // Only active when "Manual" is the chosen sort - dragging while any
+        // other sort is selected would just get undone by that sort on the
+        // very next render, which would be confusing rather than useful.
+        // The card itself is the drag source (so the whole row moves), but
+        // dragstart bails out unless the gesture actually started on the
+        // grip handle - that's what keeps an ordinary click/tap on the card
+        // from ever being mistaken for a drag.
+        let draggingLoadId = null;
+
+        function handleCardDragStart(e, loadId) {
+            if (!e.target.closest('.drag-handle')) {
+                e.preventDefault();
+                return;
+            }
+            draggingLoadId = loadId;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', loadId);
+            // Applied on the next tick so the browser's drag-image snapshot
+            // (taken synchronously from dragstart) still shows the card at
+            // full opacity instead of already-faded.
+            setTimeout(() => {
+                const el = document.querySelector(`.load-card[data-load-id="${loadId}"]`);
+                if (el) el.classList.add('dragging');
+            }, 0);
+        }
+
+        function handleCardDragOver(e, loadId) {
+            if (!draggingLoadId || draggingLoadId === loadId) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            const el = document.querySelector(`.load-card[data-load-id="${loadId}"]`);
+            if (el) el.classList.add('drag-over');
+        }
+
+        function handleCardDragLeave(e, loadId) {
+            const el = document.querySelector(`.load-card[data-load-id="${loadId}"]`);
+            if (el) el.classList.remove('drag-over');
+        }
+
+        async function handleCardDrop(e, targetLoadId) {
+            e.preventDefault();
+            const el = document.querySelector(`.load-card[data-load-id="${targetLoadId}"]`);
+            if (el) el.classList.remove('drag-over');
+
+            const sourceLoadId = draggingLoadId;
+            if (!sourceLoadId || sourceLoadId === targetLoadId) return;
+
+            // Reorder within whatever subset is currently on screen (the
+            // active tab, filtered by search if any) - dragging never needs
+            // to reach across tabs, since each tab is its own list.
+            const searchQuery = (document.getElementById('searchInput')?.value || '').trim().toLowerCase();
+            const visible = sortLoads(loads.filter(getCurrentViewFilter(searchQuery)));
+            const fromIndex = visible.findIndex(l => l.id === sourceLoadId);
+            const toIndex = visible.findIndex(l => l.id === targetLoadId);
+            if (fromIndex === -1 || toIndex === -1) return;
+
+            const [moved] = visible.splice(fromIndex, 1);
+            visible.splice(toIndex, 0, moved);
+
+            // Renumber with gaps rather than 0,1,2… - leaves room to slot a
+            // future drop between two existing positions without a full
+            // renumber every time (not needed yet, but costs nothing now).
+            const previousOrders = new Map(visible.map(l => [l.id, l.manualOrder]));
+            visible.forEach((load, index) => {
+                load.manualOrder = index * 10;
+            });
+
+            renderLoads();
+
+            const changed = visible.filter(l => previousOrders.get(l.id) !== l.manualOrder);
+            try {
+                await Promise.all(changed.map(l => apiUpdateLoad({ id: l.id, manualOrder: l.manualOrder })));
+            } catch (err) {
+                console.error('Failed to save the new order:', err);
+                changed.forEach(l => { l.manualOrder = previousOrders.get(l.id); });
+                renderLoads();
+                alert('Could not save the new order - check your connection and try again.');
+            }
+        }
+
+        function handleCardDragEnd(e) {
+            document.querySelectorAll('.load-card.dragging, .load-card.drag-over').forEach((el) => {
+                el.classList.remove('dragging', 'drag-over');
+            });
+            draggingLoadId = null;
         }
 
         // ── Firestore helpers ────────────────────────────────────────
@@ -3321,14 +3472,7 @@
             cleanAllBtn.style.display = showCleanAll ? '' : 'none';
             cleanAllBtn.textContent = `🧹 Clean All (${podReceivedCount})`;
 
-            const visibleLoads = sortLoads(loads.filter((load) => {
-                // While searching, look across every tab - hunting for a rate
-                // con is useless if it's hidden just because it's already
-                // been delivered. The status line below says so explicitly.
-                if (searchQuery) return loadMatchesSearch(load, searchQuery);
-                if (currentTab === 'active') return MAIN_TAB_STAGES.includes(load.status);
-                return load.status === currentTab;
-            }));
+            const visibleLoads = sortLoads(loads.filter(getCurrentViewFilter(searchQuery)));
 
             const statusEl = document.getElementById('searchStatus');
             if (searchQuery) {
@@ -3368,10 +3512,14 @@
                 return;
             }
 
+            const isManualSort = currentSort === 'manual';
+
             container.innerHTML = visibleLoads.map(load => `
-                <div class="load-card ${load.status}${load.issueNote ? ' has-issue' : ''}">
+                <div class="load-card ${load.status}${load.issueNote ? ' has-issue' : ''}" data-load-id="${load.id}"
+                    ${isManualSort ? `draggable="true" ondragstart="handleCardDragStart(event, '${load.id}')" ondragover="handleCardDragOver(event, '${load.id}')" ondragleave="handleCardDragLeave(event, '${load.id}')" ondrop="handleCardDrop(event, '${load.id}')" ondragend="handleCardDragEnd(event)"` : ''}>
                     <div class="load-card-collapsed" onclick="toggleCardExpand('${load.id}', event)">
                       <div class="load-card-main-row">
+                        ${isManualSort ? `<div class="drag-handle" title="Drag to reorder" onclick="event.stopPropagation()">⠿</div>` : ''}
                         <div class="load-card-menu">
                             <button class="menu-btn" onclick="toggleDropdown('${load.id}', event)">⋮</button>
                             <div class="dropdown-menu" data-menu="${load.id}">

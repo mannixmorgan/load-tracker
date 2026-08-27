@@ -1068,10 +1068,16 @@
             color: #333;
         }
 
+        /* Anchored on the LEFT, not the right - the ⋮ button sits at the
+           far left edge of the card, so a right-anchored menu (aligning
+           its right edge to a button near the left edge) ran 50-80px past
+           the left edge of the page. Normally that spilled into the page's
+           side margins where it went unnoticed, but full screen mode
+           removes those margins, so it ran off the physical screen edge. */
         .dropdown-menu {
             display: none;
             position: absolute;
-            right: 0;
+            left: 0;
             top: 30px;
             background: white;
             border: 1px solid #ddd;
@@ -1079,6 +1085,14 @@
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             z-index: 100;
             min-width: 130px;
+        }
+
+        /* For a card near the bottom of the screen (the last load, or any
+           card while in full screen), opening downward runs the menu off
+           the edge of the viewport - flip it to open upward instead. */
+        .dropdown-menu.open-upward {
+            top: auto;
+            bottom: 30px;
         }
 
         .dropdown-menu.active {
@@ -3437,13 +3451,25 @@
             }
         }
 
+        // Roughly how tall the open menu is - used to check whether it fits
+        // below the button before deciding which way to open it.
+        const DROPDOWN_MENU_HEIGHT = 220;
+
         function toggleDropdown(loadId, e) {
             e.stopPropagation();
             const menu = document.querySelector(`[data-menu="${loadId}"]`);
             if (!menu) return;
             const isOpen = menu.classList.contains('active');
-            document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.remove('active'));
-            if (!isOpen) menu.classList.add('active');
+            document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.remove('active', 'open-upward'));
+            if (isOpen) return;
+
+            const button = menu.parentElement.querySelector('.menu-btn');
+            const buttonRect = button ? button.getBoundingClientRect() : null;
+            const spaceBelow = buttonRect ? window.innerHeight - buttonRect.bottom : Infinity;
+            if (spaceBelow < DROPDOWN_MENU_HEIGHT) {
+                menu.classList.add('open-upward');
+            }
+            menu.classList.add('active');
         }
 
         function closeDropdown(loadId) {

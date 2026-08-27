@@ -2010,20 +2010,36 @@
             document.addEventListener('pointercancel', handleHandlePointerCancel);
         }
 
+        const REORDER_SLIDE_MS = 150;
+
         function handleHandlePointerMove(e) {
             if (!dragState) return;
             const deltaY = e.clientY - dragState.startClientY;
             dragState.ghostEl.style.top = (dragState.cardStartTop + deltaY) + 'px';
 
-            // Whichever card the pointer is currently over vertically is
-            // where the dragged card should slot in - moved there live (with
-            // the rest of the list sliding to make room) rather than only
-            // reordering once you let go, so you can see where it'll land.
+            // While the last swap's slide animation is still playing, the
+            // other cards' bounding boxes reflect their in-flight animated
+            // position, not where they're settling - hit-testing against
+            // that is what caused the rapid back-and-forth flicker. Just
+            // keep the ghost following the pointer until it settles.
+            if (dragState.animating) return;
+
+            const container = dragState.cardEl.parentElement;
+            const cards = Array.from(container.querySelectorAll('.load-card'));
+            const draggedIndex = cards.indexOf(dragState.cardEl);
+
+            // Only swap with a card once the pointer has passed its
+            // midpoint, and only a card actually in the direction being
+            // dragged - the hysteresis (versus "anywhere inside its
+            // bounds") is what stops it swapping back and forth right at
+            // the boundary between two cards.
             let targetEl = null;
-            document.querySelectorAll('.load-card').forEach((el) => {
+            cards.forEach((el, index) => {
                 if (targetEl || el === dragState.cardEl) return;
                 const r = el.getBoundingClientRect();
-                if (e.clientY >= r.top && e.clientY <= r.bottom) targetEl = el;
+                const midpoint = r.top + r.height / 2;
+                if (index < draggedIndex && e.clientY < midpoint) targetEl = el;
+                else if (index > draggedIndex && e.clientY > midpoint) targetEl = el;
             });
 
             if (targetEl) reorderLive(targetEl);
@@ -2049,19 +2065,29 @@
                 targetEl.before(dragState.cardEl);
             }
 
+            let animatedAny = false;
             cards.forEach((el) => {
                 if (el === dragState.cardEl) return;
                 const first = firstRects.get(el);
                 const last = el.getBoundingClientRect();
                 const deltaY = first.top - last.top;
                 if (!deltaY) return;
+                animatedAny = true;
                 el.style.transition = 'none';
                 el.style.transform = `translateY(${deltaY}px)`;
                 requestAnimationFrame(() => {
-                    el.style.transition = 'transform 0.15s ease';
+                    el.style.transition = `transform ${REORDER_SLIDE_MS}ms ease`;
                     el.style.transform = '';
                 });
             });
+
+            if (animatedAny && dragState) {
+                dragState.animating = true;
+                clearTimeout(dragState.animatingTimer);
+                dragState.animatingTimer = setTimeout(() => {
+                    if (dragState) dragState.animating = false;
+                }, REORDER_SLIDE_MS);
+            }
         }
 
         async function handleHandlePointerUp(e) {
@@ -2082,6 +2108,7 @@
             document.removeEventListener('pointermove', handleHandlePointerMove);
             document.removeEventListener('pointerup', handleHandlePointerUp);
             document.removeEventListener('pointercancel', handleHandlePointerCancel);
+            clearTimeout(dragState.animatingTimer);
             dragState.ghostEl.remove();
             dragState.cardEl.classList.remove('dragging');
             dragState = null;

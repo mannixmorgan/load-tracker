@@ -1036,6 +1036,9 @@
             line-height: 1;
             cursor: grab;
             border-radius: 6px;
+            /* Stops the browser's own touch-scroll from fighting the drag
+               gesture on a phone/tablet - Pointer Events handle it instead. */
+            touch-action: none;
         }
 
         .drag-handle:hover {
@@ -1047,12 +1050,27 @@
             cursor: grabbing;
         }
 
+        /* The real card, left in place as a dimmed placeholder while its
+           floating .drag-ghost copy is the one actually following the
+           pointer (see handleHandlePointerDown). */
         .load-card.dragging {
             opacity: 0.4;
         }
 
         .load-card.drag-over {
             box-shadow: inset 0 3px 0 0 #1a3a52;
+        }
+
+        /* The floating copy that tracks the pointer during a drag - fixed
+           positioning takes it out of the page flow entirely so it can
+           sit on top of everything and move independently of scrolling. */
+        .drag-ghost {
+            position: fixed;
+            margin: 0;
+            pointer-events: none;
+            z-index: 2000;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            opacity: 0.95;
         }
 
         .menu-btn {
@@ -1991,51 +2009,108 @@
         // The grab handle next to the ⋮ menu is always there - grabbing it
         // and dropping a card switches the board to a manually-set order
         // on the spot (see manualOrderActive), overriding whatever sort was
-        // picked until a sort is chosen again. The card itself is the drag
-        // source (so the whole row moves), but dragstart bails out unless
-        // the gesture actually started on the grip handle - that's what
-        // keeps an ordinary click/tap on the card from ever being mistaken
-        // for a drag.
-        let draggingLoadId = null;
+        // picked until a sort is chosen again.
+        //
+        // Built on Pointer Events (not native HTML5 drag-and-drop) so the
+        // card actually follows the mouse/finger in real time - native
+        // drag-and-drop leaves the original element sitting in place and
+        // only shows a static, browser-drawn "ghost" trailing the cursor,
+        // which is not real feedback and doesn't work on touch at all.
+        // Pointer Events unify mouse, touch, and pen under one API.
+        let dragState = null;
 
-        function handleCardDragStart(e, loadId) {
-            if (!e.target.closest('.drag-handle')) {
-                e.preventDefault();
-                return;
+        function handleHandlePointerDown(e, loadId) {
+            if (e.button !== undefined && e.button !== 0) return; // primary button/touch only
+            e.preventDefault();
+
+            const card = document.querySelector(`.load-card[data-load-id="${loadId}"]`);
+            if (!card) return;
+            const rect = card.getBoundingClientRect();
+
+            // A floating copy that actually tracks the pointer, while the
+            // real card stays put underneath (dimmed) as a placeholder -
+            // this is what makes the drag look and feel like picking the
+            // row up, rather than a static ghost.
+            const ghost = card.cloneNode(true);
+            ghost.classList.add('drag-ghost');
+            ghost.removeAttribute('data-load-id');
+            ghost.style.width = rect.width + 'px';
+            ghost.style.left = rect.left + 'px';
+            ghost.style.top = rect.top + 'px';
+            document.body.appendChild(ghost);
+
+            card.classList.add('dragging');
+
+            dragState = {
+                loadId,
+                cardEl: card,
+                ghostEl: ghost,
+                handleEl: e.currentTarget,
+                startClientY: e.clientY,
+                cardStartTop: rect.top,
+                currentTargetId: null
+            };
+
+            e.currentTarget.setPointerCapture(e.pointerId);
+            e.currentTarget.addEventListener('pointermove', handleHandlePointerMove);
+            e.currentTarget.addEventListener('pointerup', handleHandlePointerUp);
+            e.currentTarget.addEventListener('pointercancel', handleHandlePointerCancel);
+        }
+
+        function handleHandlePointerMove(e) {
+            if (!dragState) return;
+            const deltaY = e.clientY - dragState.startClientY;
+            dragState.ghostEl.style.top = (dragState.cardStartTop + deltaY) + 'px';
+
+            // Whichever card the pointer is currently over vertically is
+            // the drop target - highlighted the same way the old
+            // drag-and-drop version did.
+            let targetId = null;
+            document.querySelectorAll('.load-card').forEach((el) => {
+                if (targetId || el === dragState.cardEl) return;
+                const r = el.getBoundingClientRect();
+                if (e.clientY >= r.top && e.clientY <= r.bottom) targetId = el.dataset.loadId;
+            });
+
+            if (targetId !== dragState.currentTargetId) {
+                document.querySelectorAll('.load-card.drag-over').forEach(el => el.classList.remove('drag-over'));
+                if (targetId) {
+                    const el = document.querySelector(`.load-card[data-load-id="${targetId}"]`);
+                    if (el) el.classList.add('drag-over');
+                }
+                dragState.currentTargetId = targetId;
             }
-            draggingLoadId = loadId;
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/plain', loadId);
-            // Applied on the next tick so the browser's drag-image snapshot
-            // (taken synchronously from dragstart) still shows the card at
-            // full opacity instead of already-faded.
-            setTimeout(() => {
-                const el = document.querySelector(`.load-card[data-load-id="${loadId}"]`);
-                if (el) el.classList.add('dragging');
-            }, 0);
         }
 
-        function handleCardDragOver(e, loadId) {
-            if (!draggingLoadId || draggingLoadId === loadId) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-            const el = document.querySelector(`.load-card[data-load-id="${loadId}"]`);
-            if (el) el.classList.add('drag-over');
+        async function handleHandlePointerUp(e) {
+            if (!dragState) return;
+            const { loadId, currentTargetId } = dragState;
+            cleanupDragState(e);
+
+            if (currentTargetId && currentTargetId !== loadId) {
+                await applyReorder(loadId, currentTargetId);
+            }
         }
 
-        function handleCardDragLeave(e, loadId) {
-            const el = document.querySelector(`.load-card[data-load-id="${loadId}"]`);
-            if (el) el.classList.remove('drag-over');
+        function handleHandlePointerCancel(e) {
+            cleanupDragState(e);
         }
 
-        async function handleCardDrop(e, targetLoadId) {
-            e.preventDefault();
-            const el = document.querySelector(`.load-card[data-load-id="${targetLoadId}"]`);
-            if (el) el.classList.remove('drag-over');
+        function cleanupDragState(e) {
+            if (!dragState) return;
+            dragState.handleEl.removeEventListener('pointermove', handleHandlePointerMove);
+            dragState.handleEl.removeEventListener('pointerup', handleHandlePointerUp);
+            dragState.handleEl.removeEventListener('pointercancel', handleHandlePointerCancel);
+            if (e && dragState.handleEl.hasPointerCapture(e.pointerId)) {
+                dragState.handleEl.releasePointerCapture(e.pointerId);
+            }
+            dragState.ghostEl.remove();
+            dragState.cardEl.classList.remove('dragging');
+            document.querySelectorAll('.load-card.drag-over').forEach(el => el.classList.remove('drag-over'));
+            dragState = null;
+        }
 
-            const sourceLoadId = draggingLoadId;
-            if (!sourceLoadId || sourceLoadId === targetLoadId) return;
-
+        async function applyReorder(sourceLoadId, targetLoadId) {
             // Reorder within whatever subset is currently on screen (the
             // active tab, filtered by search if any) - dragging never needs
             // to reach across tabs, since each tab is its own list.
@@ -2070,13 +2145,6 @@
                 renderLoads();
                 alert('Could not save the new order - check your connection and try again.');
             }
-        }
-
-        function handleCardDragEnd(e) {
-            document.querySelectorAll('.load-card.dragging, .load-card.drag-over').forEach((el) => {
-                el.classList.remove('dragging', 'drag-over');
-            });
-            draggingLoadId = null;
         }
 
         // ── Firestore helpers ────────────────────────────────────────
@@ -3550,11 +3618,10 @@
             }
 
             container.innerHTML = visibleLoads.map(load => `
-                <div class="load-card ${load.status}${load.issueNote ? ' has-issue' : ''}" data-load-id="${load.id}"
-                    draggable="true" ondragstart="handleCardDragStart(event, '${load.id}')" ondragover="handleCardDragOver(event, '${load.id}')" ondragleave="handleCardDragLeave(event, '${load.id}')" ondrop="handleCardDrop(event, '${load.id}')" ondragend="handleCardDragEnd(event)">
+                <div class="load-card ${load.status}${load.issueNote ? ' has-issue' : ''}" data-load-id="${load.id}">
                     <div class="load-card-collapsed" onclick="toggleCardExpand('${load.id}', event)">
                       <div class="load-card-main-row">
-                        <div class="drag-handle" title="Drag to reorder" onclick="event.stopPropagation()">⠿</div>
+                        <div class="drag-handle" title="Drag to reorder" onclick="event.stopPropagation()" onpointerdown="handleHandlePointerDown(event, '${load.id}')">⠿</div>
                         <div class="load-card-menu">
                             <button class="menu-btn" onclick="toggleDropdown('${load.id}', event)">⋮</button>
                             <div class="dropdown-menu" data-menu="${load.id}">

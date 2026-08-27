@@ -1027,6 +1027,7 @@
             flex-shrink: 0;
             width: 24px;
             height: 30px;
+            margin-right: 6px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -1706,6 +1707,29 @@
         function changeSort(sort) {
             currentSort = sort;
             renderLoads();
+            if (sort === 'manual') backfillManualOrder();
+        }
+
+        // The very first time Manual sort is used, none of the existing
+        // loads have a manualOrder yet - rather than leaving them to fall
+        // back silently (see compareManualOrder), seed every load right
+        // then with an order matching the normal rate-con-descending sort,
+        // across every tab, so Manual mode starts out already organized
+        // instead of needing every load dragged once just to "activate" it.
+        // Only runs when NO load has a manualOrder yet, so it can never
+        // undo real dragging done in an earlier session.
+        async function backfillManualOrder() {
+            if (!loads.length || loads.some(l => typeof l.manualOrder === 'number')) return;
+
+            const ordered = [...loads].sort(compareRateConDesc);
+            ordered.forEach((load, index) => { load.manualOrder = index * 10; });
+            renderLoads();
+
+            try {
+                await Promise.all(ordered.map(l => apiUpdateLoad({ id: l.id, manualOrder: l.manualOrder })));
+            } catch (err) {
+                console.error('Failed to seed manual order for existing loads:', err);
+            }
         }
 
         // ── Auto-scroll (wallboard / projector mode) ──────────────────

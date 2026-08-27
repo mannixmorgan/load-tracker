@@ -1069,10 +1069,6 @@
             opacity: 0.4;
         }
 
-        .load-card.drag-over {
-            box-shadow: inset 0 3px 0 0 #1a3a52;
-        }
-
         /* The floating copy that tracks the pointer during a drag - fixed
            positioning takes it out of the page flow entirely so it can
            sit on top of everything and move independently of scrolling. */
@@ -1999,16 +1995,19 @@
                 loadId,
                 cardEl: card,
                 ghostEl: ghost,
-                handleEl: e.currentTarget,
                 startClientY: e.clientY,
-                cardStartTop: rect.top,
-                currentTargetId: null
+                cardStartTop: rect.top
             };
 
-            e.currentTarget.setPointerCapture(e.pointerId);
-            e.currentTarget.addEventListener('pointermove', handleHandlePointerMove);
-            e.currentTarget.addEventListener('pointerup', handleHandlePointerUp);
-            e.currentTarget.addEventListener('pointercancel', handleHandlePointerCancel);
+            // Listening on document (rather than capturing the pointer on
+            // the handle itself) is what keeps the drag receiving events
+            // through the whole gesture - live-reordering repeatedly moves
+            // the handle's own card to a new spot in the DOM, and that
+            // silently breaks pointer capture on several browsers since the
+            // captured element itself is being relocated mid-drag.
+            document.addEventListener('pointermove', handleHandlePointerMove);
+            document.addEventListener('pointerup', handleHandlePointerUp);
+            document.addEventListener('pointercancel', handleHandlePointerCancel);
         }
 
         function handleHandlePointerMove(e) {
@@ -2017,33 +2016,61 @@
             dragState.ghostEl.style.top = (dragState.cardStartTop + deltaY) + 'px';
 
             // Whichever card the pointer is currently over vertically is
-            // the drop target - highlighted the same way the old
-            // drag-and-drop version did.
-            let targetId = null;
+            // where the dragged card should slot in - moved there live (with
+            // the rest of the list sliding to make room) rather than only
+            // reordering once you let go, so you can see where it'll land.
+            let targetEl = null;
             document.querySelectorAll('.load-card').forEach((el) => {
-                if (targetId || el === dragState.cardEl) return;
+                if (targetEl || el === dragState.cardEl) return;
                 const r = el.getBoundingClientRect();
-                if (e.clientY >= r.top && e.clientY <= r.bottom) targetId = el.dataset.loadId;
+                if (e.clientY >= r.top && e.clientY <= r.bottom) targetEl = el;
             });
 
-            if (targetId !== dragState.currentTargetId) {
-                document.querySelectorAll('.load-card.drag-over').forEach(el => el.classList.remove('drag-over'));
-                if (targetId) {
-                    const el = document.querySelector(`.load-card[data-load-id="${targetId}"]`);
-                    if (el) el.classList.add('drag-over');
-                }
-                dragState.currentTargetId = targetId;
+            if (targetEl) reorderLive(targetEl);
+        }
+
+        // FLIP technique: record where every card is BEFORE moving the
+        // dragged one, move it, then animate every card that shifted from
+        // its old position to its new one - that's what makes the rest of
+        // the list look like it's sliding out of the way, instead of the
+        // list just snapping into its new order.
+        function reorderLive(targetEl) {
+            const container = dragState.cardEl.parentElement;
+            const cards = Array.from(container.querySelectorAll('.load-card'));
+            const draggedIndex = cards.indexOf(dragState.cardEl);
+            const targetIndex = cards.indexOf(targetEl);
+            if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) return;
+
+            const firstRects = new Map(cards.map(el => [el, el.getBoundingClientRect()]));
+
+            if (draggedIndex < targetIndex) {
+                targetEl.after(dragState.cardEl);
+            } else {
+                targetEl.before(dragState.cardEl);
             }
+
+            cards.forEach((el) => {
+                if (el === dragState.cardEl) return;
+                const first = firstRects.get(el);
+                const last = el.getBoundingClientRect();
+                const deltaY = first.top - last.top;
+                if (!deltaY) return;
+                el.style.transition = 'none';
+                el.style.transform = `translateY(${deltaY}px)`;
+                requestAnimationFrame(() => {
+                    el.style.transition = 'transform 0.15s ease';
+                    el.style.transform = '';
+                });
+            });
         }
 
         async function handleHandlePointerUp(e) {
             if (!dragState) return;
-            const { loadId, currentTargetId } = dragState;
+            const container = dragState.cardEl.parentElement;
             cleanupDragState(e);
 
-            if (currentTargetId && currentTargetId !== loadId) {
-                await applyReorder(loadId, currentTargetId);
-            }
+            const orderedIds = Array.from(container.querySelectorAll('.load-card')).map(el => el.dataset.loadId);
+            await applyReorder(orderedIds);
         }
 
         function handleHandlePointerCancel(e) {
@@ -2052,30 +2079,18 @@
 
         function cleanupDragState(e) {
             if (!dragState) return;
-            dragState.handleEl.removeEventListener('pointermove', handleHandlePointerMove);
-            dragState.handleEl.removeEventListener('pointerup', handleHandlePointerUp);
-            dragState.handleEl.removeEventListener('pointercancel', handleHandlePointerCancel);
-            if (e && dragState.handleEl.hasPointerCapture(e.pointerId)) {
-                dragState.handleEl.releasePointerCapture(e.pointerId);
-            }
+            document.removeEventListener('pointermove', handleHandlePointerMove);
+            document.removeEventListener('pointerup', handleHandlePointerUp);
+            document.removeEventListener('pointercancel', handleHandlePointerCancel);
             dragState.ghostEl.remove();
             dragState.cardEl.classList.remove('dragging');
-            document.querySelectorAll('.load-card.drag-over').forEach(el => el.classList.remove('drag-over'));
             dragState = null;
         }
 
-        async function applyReorder(sourceLoadId, targetLoadId) {
-            // Reorder within whatever subset is currently on screen (the
-            // active tab, filtered by search if any) - dragging never needs
-            // to reach across tabs, since each tab is its own list.
-            const searchQuery = (document.getElementById('searchInput')?.value || '').trim().toLowerCase();
-            const visible = sortLoads(loads.filter(getCurrentViewFilter(searchQuery)));
-            const fromIndex = visible.findIndex(l => l.id === sourceLoadId);
-            const toIndex = visible.findIndex(l => l.id === targetLoadId);
-            if (fromIndex === -1 || toIndex === -1) return;
-
-            const [moved] = visible.splice(fromIndex, 1);
-            visible.splice(toIndex, 0, moved);
+        async function applyReorder(orderedIds) {
+            const loadById = new Map(loads.map(l => [l.id, l]));
+            const visible = orderedIds.map(id => loadById.get(id)).filter(Boolean);
+            if (visible.length < 2) return;
 
             // Renumber with gaps rather than 0,1,2… - leaves room to slot a
             // future drop between two existing positions without a full

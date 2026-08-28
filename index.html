@@ -690,6 +690,22 @@
             padding: 10px 0;
         }
 
+        .quote-mileage-note {
+            font-size: 11px;
+            font-weight: 600;
+            color: #999;
+        }
+
+        .quote-permile-section {
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px dashed #ddd;
+        }
+
+        .quote-permile-section .form-group {
+            margin-bottom: 4px;
+        }
+
         .extraction-status.success {
             background: #e8f5e9;
             color: #2e7d32;
@@ -1703,7 +1719,7 @@
 
                 <div class="form-actions">
                     <button type="button" class="btn-secondary" onclick="closeModal('archiveConfirmModal')">Cancel</button>
-                    <button type="submit" class="btn-primary">Archive</button>
+                    <button type="submit" class="btn-primary" id="archiveConfirmSubmitBtn">Archive</button>
                 </div>
             </form>
         </div>
@@ -2513,6 +2529,7 @@
                 const resultsEl = document.getElementById('quoteResults');
                 resultsEl.innerHTML = '';
                 resultsEl.classList.remove('active');
+                currentQuoteMiles = null;
             } else if (modalId === 'pdfViewerModal') {
                 // Release the blob URL rather than leaking it.
                 document.getElementById('pdfViewerFrame').src = '';
@@ -2687,6 +2704,45 @@
             return btoa(binary);
         }
 
+        // Carrier rate - the line-haul $ amount, listed twice on this
+        // template (once next to "Amount", once next to "Total" - always
+        // identical, so either one works). Requiring the "$" is what keeps
+        // this from ever matching the shipment weight, which has no $ sign
+        // and sits much further across the page - the range check alone
+        // isn't enough since weight can occasionally read under 10,000
+        // too. Rates here always run $50-$9,999. Shared between the
+        // initial Add Load extraction and the archive-time re-extraction
+        // fallback below.
+        function extractCarrierRate(searchText) {
+            const matches = [...searchText.matchAll(/\$\s?([\d,]+(?:\.\d{1,2})?)/g)];
+            for (const m of matches) {
+                const value = parseFloat(m[1].replace(/,/g, ''));
+                if (!isNaN(value) && value >= 50 && value <= 9999) return value;
+            }
+            return null;
+        }
+
+        // Re-reads an already-attached rate con PDF to pull the carrier
+        // rate for loads that don't have one cached yet - either they were
+        // created before rate extraction existed, or extraction missed the
+        // first time. Used at archive time so nobody has to type rates in
+        // by hand, especially when archiving several loads at once.
+        async function extractCarrierRateFromPdfData(base64Data) {
+            try {
+                const binary = atob(base64Data);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+                const page = await pdf.getPage(1);
+                const textContent = await page.getTextContent();
+                const text = textContent.items.map(item => item.str).join(' ');
+                return extractCarrierRate(text);
+            } catch (err) {
+                console.error('Failed to re-extract carrier rate from PDF:', err);
+                return null;
+            }
+        }
+
         function processPdfFile(file) {
             // A file has been picked - reveal the detail fields (and swap
             // the picker's bare Cancel button for the full Cancel/Create
@@ -2731,23 +2787,6 @@
                     let carrierRate = null;
 
                     const WINDOW = 150; // chars to search after a label
-
-                    // Carrier rate - the line-haul $ amount, listed twice on
-                    // this template (once next to "Amount", once next to
-                    // "Total" - always identical, so either one works).
-                    // Requiring the "$" is what keeps this from ever
-                    // matching the shipment weight, which has no $ sign and
-                    // sits much further across the page - the range check
-                    // alone isn't enough since weight can occasionally read
-                    // under 10,000 too. Rates here always run $50-$9,999.
-                    function extractCarrierRate(searchText) {
-                        const matches = [...searchText.matchAll(/\$\s?([\d,]+(?:\.\d{1,2})?)/g)];
-                        for (const m of matches) {
-                            const value = parseFloat(m[1].replace(/,/g, ''));
-                            if (!isNaN(value) && value >= 50 && value <= 9999) return value;
-                        }
-                        return null;
-                    }
 
                     // Phone numbers in this broker's rate cons sometimes carry
                     // a dialing extension right after the number, e.g.
@@ -3679,6 +3718,9 @@
 
         // Bulk path keeps the plain confirm() - archiving many at once
         // doesn't need a per-load rate review the way one at a time does.
+        // Any load that doesn't already have a cached rate (created before
+        // extraction existed, or extraction missed the first time) gets its
+        // attached PDF re-read here so nobody has to type rates in by hand.
         async function archiveAllPodReceived() {
             const target = loads.filter(l => l.status === 'pod-received');
             if (!target.length) return;
@@ -3688,6 +3730,19 @@
                 `They'll come off the board and be saved for the Quote Calculator, rate con PDFs included.`
             );
             if (!confirmed) return;
+
+            const needsExtraction = target.filter(l => typeof l.carrierRate !== 'number' && l.pdfData);
+            if (needsExtraction.length) {
+                const btn = document.getElementById('archiveAllBtn');
+                const originalText = btn.textContent;
+                btn.disabled = true;
+                btn.textContent = 'Reading rate cons…';
+                await Promise.all(needsExtraction.map(async (l) => {
+                    l.carrierRate = await extractCarrierRateFromPdfData(l.pdfData);
+                }));
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
 
             const records = target.map(l => buildArchiveRecord(l));
             const ids = target.map(l => l.id);
@@ -3710,7 +3765,11 @@
             }
         }
 
-        function openArchiveConfirm(loadId) {
+        // Loads created before rate extraction existed (or where it missed
+        // the first time) won't have a cached carrierRate - re-read the
+        // attached PDF right here so the field is filled in automatically
+        // instead of asking for a manual entry.
+        async function openArchiveConfirm(loadId) {
             const load = loads.find(l => l.id === loadId);
             if (!load) return;
             archivingLoadId = loadId;
@@ -3721,15 +3780,40 @@
 
             const rateInput = document.getElementById('archiveConfirmRate');
             const hint = document.getElementById('archiveConfirmRateHint');
+            const submitBtn = document.getElementById('archiveConfirmSubmitBtn');
+
+            document.getElementById('archiveConfirmModal').classList.add('active');
+
             if (typeof load.carrierRate === 'number') {
                 rateInput.value = load.carrierRate;
                 hint.textContent = 'Auto-extracted from the rate con - adjust if it\'s wrong.';
-            } else {
-                rateInput.value = '';
-                hint.textContent = 'Could not auto-extract a rate from the PDF - enter it manually.';
+                return;
             }
 
-            document.getElementById('archiveConfirmModal').classList.add('active');
+            rateInput.value = '';
+
+            if (!load.pdfData) {
+                hint.textContent = 'No rate con PDF attached - enter the rate manually.';
+                return;
+            }
+
+            hint.textContent = 'Reading the rate con for the carrier rate…';
+            submitBtn.disabled = true;
+            const rate = await extractCarrierRateFromPdfData(load.pdfData);
+            submitBtn.disabled = false;
+
+            // The user may have closed this modal or moved to a different
+            // load while the PDF was being read - don't clobber whatever
+            // is showing now.
+            if (archivingLoadId !== loadId) return;
+
+            if (rate !== null) {
+                load.carrierRate = rate;
+                rateInput.value = rate;
+                hint.textContent = 'Auto-extracted from the rate con - adjust if it\'s wrong.';
+            } else {
+                hint.textContent = 'Could not auto-extract a rate from the PDF - enter it manually.';
+            }
         }
 
         async function confirmArchiveLoad(e) {
@@ -4072,6 +4156,7 @@
             const resultsEl = document.getElementById('quoteResults');
             resultsEl.innerHTML = '';
             resultsEl.classList.remove('active');
+            currentQuoteMiles = null;
             document.getElementById('quoteCalculatorModal').classList.add('active');
         }
 
@@ -4098,9 +4183,8 @@
             return Math.round(value / 50) * 50;
         }
 
-        // Free, no-API-key geocoder. Distance-only estimate - there's no
-        // routing API behind this, just a straight-line (great-circle)
-        // distance nudged up to roughly approximate actual road miles.
+        // Free, no-API-key geocoder - turns a city/state into coordinates
+        // so a route can be looked up between them.
         async function geocodeCity(cityState) {
             const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(cityState)}`;
             const res = await fetch(url);
@@ -4110,6 +4194,23 @@
             return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
         }
 
+        // Actual road-following distance via OSRM's free public routing
+        // API - no API key needed, and far closer to what a mapping app
+        // reports than a straight-line estimate (which runs noticeably
+        // short on routes that aren't a straight shot, like Midland-Tyler).
+        async function getDrivingMiles(from, to) {
+            const url = `https://router.project-osrm.org/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('Routing request failed');
+            const data = await res.json();
+            const meters = data.routes && data.routes[0] && data.routes[0].distance;
+            if (typeof meters !== 'number') throw new Error('No route found');
+            return meters / 1609.344;
+        }
+
+        // Straight-line (great-circle) distance - only used as a fallback
+        // when the routing lookup itself fails, nudged up since a direct
+        // line always underestimates actual road miles.
         function haversineMiles(a, b) {
             const R = 3958.8;
             const toRad = deg => deg * Math.PI / 180;
@@ -4119,10 +4220,27 @@
                 Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2;
             return R * 2 * Math.asin(Math.sqrt(h));
         }
-
-        // Straight-line distance underestimates actual road miles - this
-        // fudge factor gets it in the right ballpark for a quote estimate.
         const ROAD_DISTANCE_FACTOR = 1.2;
+
+        // Set by calculateQuote whenever a mileage is known, so the $/mile
+        // experimentation box can react live without another round trip.
+        let currentQuoteMiles = null;
+
+        // Recomputes the "price at that rate" line live as the $/mile
+        // input changes - lets you play with different per-mile rates on
+        // the spot, which matters most on a lane with no historical loads
+        // to base a suggested price on.
+        function updatePerMileEstimate() {
+            const input = document.getElementById('quotePerMileRate');
+            const resultEl = document.getElementById('quotePerMileResult');
+            if (!input || !resultEl) return;
+            const rate = parseFloat(input.value);
+            if (currentQuoteMiles === null || isNaN(rate) || rate <= 0) {
+                resultEl.textContent = '—';
+                return;
+            }
+            resultEl.textContent = `$${roundToNearest50(currentQuoteMiles * rate).toLocaleString()}`;
+        }
 
         async function calculateQuote(e) {
             e.preventDefault();
@@ -4136,6 +4254,7 @@
             btn.textContent = 'Calculating...';
             resultsEl.classList.remove('active');
             resultsEl.innerHTML = '';
+            currentQuoteMiles = null;
 
             try {
                 const matches = findMatchingArchivedLoads(pickup, delivery);
@@ -4144,11 +4263,21 @@
                 try {
                     const [from, to] = await Promise.all([geocodeCity(pickup), geocodeCity(delivery)]);
                     if (from && to) {
-                        const miles = Math.round(haversineMiles(from, to) * ROAD_DISTANCE_FACTOR);
+                        let miles;
+                        let note = '';
+                        try {
+                            miles = await getDrivingMiles(from, to);
+                        } catch (routeErr) {
+                            console.error('Routing failed, falling back to a straight-line estimate:', routeErr);
+                            miles = haversineMiles(from, to) * ROAD_DISTANCE_FACTOR;
+                            note = ' <span class="quote-mileage-note">(straight-line estimate)</span>';
+                        }
+                        miles = Math.round(miles);
+                        currentQuoteMiles = miles;
                         mileageHtml = `
                             <div class="quote-result-row">
                                 <div class="quote-result-label">Estimated Mileage</div>
-                                <div class="quote-result-value">${miles.toLocaleString()} mi</div>
+                                <div class="quote-result-value">${miles.toLocaleString()} mi${note}</div>
                             </div>
                         `;
                     } else {
@@ -4188,7 +4317,23 @@
                     priceHtml = `<p class="quote-no-history">No past loads found on this lane yet - archive a load on this route to get a price estimate.</p>`;
                 }
 
-                resultsEl.innerHTML = mileageHtml + priceHtml;
+                let perMileHtml = '';
+                if (currentQuoteMiles !== null) {
+                    perMileHtml = `
+                        <div class="quote-permile-section">
+                            <div class="form-group">
+                                <label for="quotePerMileRate">Try a $/mile rate</label>
+                                <input type="number" id="quotePerMileRate" step="0.05" min="0" placeholder="e.g., 2.50" oninput="updatePerMileEstimate()">
+                            </div>
+                            <div class="quote-result-row quote-result-highlight">
+                                <div class="quote-result-label">Price at that rate</div>
+                                <div class="quote-result-value" id="quotePerMileResult">—</div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                resultsEl.innerHTML = mileageHtml + priceHtml + perMileHtml;
                 resultsEl.classList.add('active');
             } finally {
                 btn.disabled = false;

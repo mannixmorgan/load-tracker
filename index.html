@@ -472,6 +472,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            gap: 16px;
+            flex-wrap: wrap;
         }
 
         .modal-content {
@@ -704,6 +706,78 @@
 
         .quote-permile-section .form-group {
             margin-bottom: 4px;
+        }
+
+        /* The "Past Loads On This Lane" side panel - deliberately much
+           more compact than an Archived-tab card, since this is a quick
+           reference list, not something you interact with. */
+        .quote-history-panel {
+            display: none;
+            background: white;
+            border-radius: 12px;
+            width: 240px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            padding: 18px;
+        }
+
+        .quote-history-panel.active {
+            display: block;
+        }
+
+        .quote-history-panel h3 {
+            font-size: 13px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .quote-history-empty {
+            font-size: 12px;
+            font-weight: 600;
+            color: #999;
+        }
+
+        .quote-history-item {
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .quote-history-item:last-child {
+            border-bottom: none;
+        }
+
+        .quote-history-lane {
+            font-size: 12px;
+            font-weight: 700;
+            color: #333;
+            line-height: 1.4;
+        }
+
+        .quote-history-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 8px;
+            margin-top: 2px;
+        }
+
+        .quote-history-carrier {
+            font-size: 11px;
+            color: #888;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .quote-history-rate {
+            font-size: 12px;
+            font-weight: 700;
+            color: #1a7a3c;
+            flex-shrink: 0;
         }
 
         .extraction-status.success {
@@ -1751,6 +1825,11 @@
 
             <div class="quote-results" id="quoteResults"></div>
         </div>
+
+        <div class="quote-history-panel" id="quoteHistoryPanel">
+            <h3>Past Loads On This Lane</h3>
+            <div id="quoteHistoryList"></div>
+        </div>
     </div>
 
     <!-- Edit Load Modal -->
@@ -2530,6 +2609,8 @@
                 resultsEl.innerHTML = '';
                 resultsEl.classList.remove('active');
                 currentQuoteMiles = null;
+                document.getElementById('quoteHistoryPanel').classList.remove('active');
+                document.getElementById('quoteHistoryList').innerHTML = '';
             } else if (modalId === 'pdfViewerModal') {
                 // Release the blob URL rather than leaking it.
                 document.getElementById('pdfViewerFrame').src = '';
@@ -4157,7 +4238,36 @@
             resultsEl.innerHTML = '';
             resultsEl.classList.remove('active');
             currentQuoteMiles = null;
+            document.getElementById('quoteHistoryPanel').classList.remove('active');
+            document.getElementById('quoteHistoryList').innerHTML = '';
             document.getElementById('quoteCalculatorModal').classList.add('active');
+        }
+
+        // Compact reference list of every archived load on the matched
+        // lane - cities, carrier, rate - shown as a side panel once
+        // Calculate runs. Deliberately much smaller/denser than an
+        // Archived-tab card since it's just a quick lookup, not something
+        // you act on from here.
+        function renderQuoteHistoryPanel(matches) {
+            const panel = document.getElementById('quoteHistoryPanel');
+            const listEl = document.getElementById('quoteHistoryList');
+
+            if (!matches.length) {
+                listEl.innerHTML = '<p class="quote-history-empty">No past loads found on this lane yet.</p>';
+            } else {
+                const sorted = [...matches].sort((a, b) => (b.archivedAt || '').localeCompare(a.archivedAt || ''));
+                listEl.innerHTML = sorted.map(load => `
+                    <div class="quote-history-item">
+                        <div class="quote-history-lane">${escapeHtml(load.pickupCity || '?')} → ${escapeHtml(load.deliveryCity || '?')}</div>
+                        <div class="quote-history-meta">
+                            <div class="quote-history-carrier">${escapeHtml(load.carrierName || '—')}</div>
+                            <div class="quote-history-rate">${typeof load.carrierRate === 'number' ? '$' + load.carrierRate.toLocaleString() : '—'}</div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            panel.classList.add('active');
         }
 
         // Lets "Dallas, TX" and "dallas,tx" and "Dallas,  TX." all match the
@@ -4258,6 +4368,7 @@
 
             try {
                 const matches = findMatchingArchivedLoads(pickup, delivery);
+                renderQuoteHistoryPanel(matches);
 
                 let mileageHtml;
                 try {

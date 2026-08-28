@@ -1389,6 +1389,38 @@
             color: #d32f2f;
         }
 
+        /* Custom city autocomplete popup - fixed positioning so it tracks
+           the input regardless of which modal/scroll container it's in,
+           and sits above the modal overlay. */
+        .city-suggestions {
+            display: none;
+            position: fixed;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            z-index: 2500;
+            max-height: 220px;
+            overflow-y: auto;
+        }
+
+        .city-suggestions.active {
+            display: block;
+        }
+
+        .city-suggestion-item {
+            padding: 10px 14px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .city-suggestion-item:hover,
+        .city-suggestion-item.highlighted {
+            background: #f5f5f5;
+        }
+
         .load-card-expanded {
             display: none;
             padding: 16px;
@@ -1530,10 +1562,12 @@
     </style>
 </head>
 <body>
-    <!-- City autocomplete suggestions for every pickup/delivery field -
-         populated by refreshCityDatalist() with common freight hubs plus
-         whatever cities actually show up in your loads/archive. -->
-    <datalist id="cityDatalist"></datalist>
+    <!-- City autocomplete suggestions box, shared by every pickup/delivery
+         field. A custom dropdown rather than a native <datalist> so it only
+         ever shows once a letter's been typed (no popup on empty focus)
+         and so the page can't be scrolled out from under it while it's
+         open - see setupCityAutocomplete(). -->
+    <div class="city-suggestions" id="citySuggestionsBox"></div>
 
     <!-- Whole-page PDF drop overlay -->
     <div class="page-drop-overlay" id="pageDropOverlay">
@@ -1692,7 +1726,7 @@
 
                     <div class="form-group">
                         <label for="pdfPickupCity">Pickup City, State *</label>
-                        <input type="text" id="pdfPickupCity" required placeholder="e.g., Denver, CO" list="cityDatalist">
+                        <input type="text" id="pdfPickupCity" required placeholder="e.g., Denver, CO">
                     </div>
 
                     <div class="form-group">
@@ -1707,7 +1741,7 @@
 
                     <div class="form-group">
                         <label for="pdfDeliveryCity">Delivery City, State *</label>
-                        <input type="text" id="pdfDeliveryCity" required placeholder="e.g., Chicago, IL" list="cityDatalist">
+                        <input type="text" id="pdfDeliveryCity" required placeholder="e.g., Chicago, IL">
                     </div>
 
                     <div class="form-group">
@@ -1841,7 +1875,7 @@
 
                 <div class="form-group">
                     <label for="editArchivedPickupCity">Pickup City, State</label>
-                    <input type="text" id="editArchivedPickupCity" required list="cityDatalist">
+                    <input type="text" id="editArchivedPickupCity" required>
                 </div>
 
                 <div class="form-group">
@@ -1851,7 +1885,7 @@
 
                 <div class="form-group">
                     <label for="editArchivedDeliveryCity">Delivery City, State</label>
-                    <input type="text" id="editArchivedDeliveryCity" required list="cityDatalist">
+                    <input type="text" id="editArchivedDeliveryCity" required>
                 </div>
 
                 <div class="form-group">
@@ -1882,12 +1916,12 @@
             <form id="quoteCalculatorForm" onsubmit="calculateQuote(event)">
                 <div class="form-group">
                     <label for="quotePickupCity">Pickup City, State</label>
-                    <input type="text" id="quotePickupCity" placeholder="e.g., Dallas, TX" required list="cityDatalist">
+                    <input type="text" id="quotePickupCity" placeholder="e.g., Dallas, TX" required>
                 </div>
 
                 <div class="form-group">
                     <label for="quoteDeliveryCity">Delivery City, State</label>
-                    <input type="text" id="quoteDeliveryCity" placeholder="e.g., Atlanta, GA" required list="cityDatalist">
+                    <input type="text" id="quoteDeliveryCity" placeholder="e.g., Atlanta, GA" required>
                 </div>
 
                 <div class="form-actions">
@@ -1930,7 +1964,7 @@
 
                 <div class="form-group">
                     <label for="editPickupCity">Pickup City, State</label>
-                    <input type="text" id="editPickupCity" required list="cityDatalist">
+                    <input type="text" id="editPickupCity" required>
                 </div>
 
                 <div class="form-group">
@@ -1945,7 +1979,7 @@
 
                 <div class="form-group">
                     <label for="editDeliveryCity">Delivery City, State</label>
-                    <input type="text" id="editDeliveryCity" required list="cityDatalist">
+                    <input type="text" id="editDeliveryCity" required>
                 </div>
 
                 <div class="form-group">
@@ -2543,8 +2577,9 @@
             'Jacksonville, FL', 'Miami, FL', 'Columbus, OH'
         ];
 
-        // Rebuilds the shared <datalist> every city input points to.
-        function refreshCityDatalist() {
+        // Rebuilds the pool of cities the autocomplete popup suggests from.
+        let citySuggestionSource = [];
+        function refreshCitySuggestionSource() {
             const seen = new Map();
             const add = (city) => {
                 if (!city) return;
@@ -2556,10 +2591,147 @@
             archivedLoads.forEach(l => { add(l.pickupCity); add(l.deliveryCity); });
             COMMON_CITIES.forEach(add);
 
-            document.getElementById('cityDatalist').innerHTML = Array.from(seen.values())
-                .map(city => `<option value="${escapeHtml(city)}"></option>`)
-                .join('');
+            citySuggestionSource = Array.from(seen.values());
         }
+        refreshCitySuggestionSource();
+
+        // ── City autocomplete popup ─────────────────────────────────
+        // Deliberately not a native <datalist> - Chrome pops a datalist's
+        // full option list open on empty focus, which is the "bunch of
+        // cities" the popup used to dump on you before you'd typed
+        // anything. A hand-rolled dropdown only ever shows once there's
+        // at least one character to match against, and lets the page's
+        // scroll be locked while it's open so it can't drift out from
+        // under the input.
+        let citySuggestionActiveInput = null;
+        let citySuggestionMatches = [];
+        let citySuggestionHighlightIndex = -1;
+        let citySuggestionScrollLock = null;
+
+        function hideCitySuggestions() {
+            const box = document.getElementById('citySuggestionsBox');
+            box.classList.remove('active');
+            box.innerHTML = '';
+            citySuggestionActiveInput = null;
+            citySuggestionMatches = [];
+            citySuggestionHighlightIndex = -1;
+            if (citySuggestionScrollLock) {
+                citySuggestionScrollLock.style.overflow = citySuggestionScrollLock.dataset.prevOverflow || '';
+                delete citySuggestionScrollLock.dataset.prevOverflow;
+                citySuggestionScrollLock = null;
+            }
+        }
+
+        function updateCitySuggestionHighlight() {
+            const box = document.getElementById('citySuggestionsBox');
+            Array.from(box.children).forEach((el, i) => {
+                el.classList.toggle('highlighted', i === citySuggestionHighlightIndex);
+            });
+        }
+
+        function showCitySuggestions(input) {
+            const query = input.value.trim();
+            if (!query) {
+                hideCitySuggestions();
+                return;
+            }
+
+            const queryLower = query.toLowerCase();
+            const matches = citySuggestionSource
+                .filter(city => city.toLowerCase().includes(queryLower))
+                .sort((a, b) => {
+                    const aStarts = a.toLowerCase().startsWith(queryLower) ? 0 : 1;
+                    const bStarts = b.toLowerCase().startsWith(queryLower) ? 0 : 1;
+                    return aStarts !== bStarts ? aStarts - bStarts : a.localeCompare(b);
+                })
+                .slice(0, 8);
+
+            if (!matches.length) {
+                hideCitySuggestions();
+                return;
+            }
+
+            citySuggestionActiveInput = input;
+            citySuggestionMatches = matches;
+            citySuggestionHighlightIndex = -1;
+
+            const box = document.getElementById('citySuggestionsBox');
+            box.innerHTML = matches.map((city, i) => `<div class="city-suggestion-item" data-index="${i}">${escapeHtml(city)}</div>`).join('');
+
+            const rect = input.getBoundingClientRect();
+            box.style.left = rect.left + 'px';
+            box.style.top = (rect.bottom + 4) + 'px';
+            box.style.width = rect.width + 'px';
+            box.classList.add('active');
+
+            // Locks whatever scrolls (the open modal's own content, or the
+            // page body outside of one) so it can't be dragged out from
+            // under the popup while it's open.
+            if (!citySuggestionScrollLock) {
+                const scrollContainer = input.closest('.modal-content') || document.body;
+                citySuggestionScrollLock = scrollContainer;
+                scrollContainer.dataset.prevOverflow = scrollContainer.style.overflow || '';
+                scrollContainer.style.overflow = 'hidden';
+            }
+        }
+
+        function selectCitySuggestion(index) {
+            if (!citySuggestionActiveInput || !citySuggestionMatches[index]) return;
+            citySuggestionActiveInput.value = citySuggestionMatches[index];
+            hideCitySuggestions();
+        }
+
+        function setupCityAutocomplete(input) {
+            input.addEventListener('input', () => showCitySuggestions(input));
+            input.addEventListener('keydown', (e) => {
+                if (citySuggestionActiveInput !== input || !citySuggestionMatches.length) return;
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    citySuggestionHighlightIndex = Math.min(citySuggestionHighlightIndex + 1, citySuggestionMatches.length - 1);
+                    updateCitySuggestionHighlight();
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    citySuggestionHighlightIndex = Math.max(citySuggestionHighlightIndex - 1, 0);
+                    updateCitySuggestionHighlight();
+                } else if (e.key === 'Enter' && citySuggestionHighlightIndex > -1) {
+                    // Picking a highlighted suggestion, not submitting the
+                    // form it happens to sit in - stopPropagation keeps
+                    // this from also triggering a form-level Enter-to-submit
+                    // handler (Edit Load, Quote Calculator).
+                    e.preventDefault();
+                    e.stopPropagation();
+                    selectCitySuggestion(citySuggestionHighlightIndex);
+                } else if (e.key === 'Escape') {
+                    hideCitySuggestions();
+                }
+            });
+        }
+
+        const CITY_INPUT_IDS = [
+            'pdfPickupCity', 'pdfDeliveryCity',
+            'editPickupCity', 'editDeliveryCity',
+            'editArchivedPickupCity', 'editArchivedDeliveryCity',
+            'quotePickupCity', 'quoteDeliveryCity'
+        ];
+        CITY_INPUT_IDS.forEach((id) => {
+            const input = document.getElementById(id);
+            if (input) setupCityAutocomplete(input);
+        });
+
+        document.getElementById('citySuggestionsBox').addEventListener('mousedown', (e) => {
+            const item = e.target.closest('.city-suggestion-item');
+            if (!item) return;
+            // mousedown + preventDefault (rather than click) keeps the
+            // input from blurring before the click has a chance to land.
+            e.preventDefault();
+            selectCitySuggestion(Number(item.dataset.index));
+        });
+
+        document.addEventListener('mousedown', (e) => {
+            if (citySuggestionActiveInput && e.target !== citySuggestionActiveInput && !e.target.closest('#citySuggestionsBox')) {
+                hideCitySuggestions();
+            }
+        });
 
         function subscribeToLoads() {
             if (loadsUnsubscribe) return;
@@ -2568,7 +2740,7 @@
                     loads = snapshot.docs.map((doc) => doc.data());
                     // Ordering is applied at render time via sortLoads().
                     renderLoads();
-                    refreshCityDatalist();
+                    refreshCitySuggestionSource();
                 },
                 (err) => {
                     console.error('Firestore listener error:', err);
@@ -2589,7 +2761,7 @@
                 (snapshot) => {
                     archivedLoads = snapshot.docs.map((doc) => doc.data());
                     if (currentTab === 'archived') renderLoads();
-                    refreshCityDatalist();
+                    refreshCitySuggestionSource();
                 },
                 (err) => console.error('Archived loads listener error:', err)
             );
@@ -2695,6 +2867,7 @@
 
         function closeModal(modalId) {
             document.getElementById(modalId).classList.remove('active');
+            hideCitySuggestions();
             if (modalId === 'pdfModal') {
                 resetForm('pdfForm');
                 pendingPdfAttachment = null;
@@ -2743,8 +2916,15 @@
             modalMouseDownTarget = e.target;
         });
 
+        // Too easy to fat-finger the backdrop and lose your place on these
+        // two - Quote Calculator (an easy lookup you don't want to redo)
+        // and Edit Load (an in-progress edit). They only close via the
+        // ×, Cancel/Close, Save, or Enter - not a stray click outside.
+        const BACKDROP_CLOSE_EXCLUDED = ['quoteCalculatorModal', 'editLoadModal'];
+
         window.onclick = function(event) {
-            if (event.target.classList.contains('modal') && modalMouseDownTarget === event.target) {
+            if (event.target.classList.contains('modal') && modalMouseDownTarget === event.target
+                && !BACKDROP_CLOSE_EXCLUDED.includes(event.target.id)) {
                 closeModal(event.target.id);
             }
         }
@@ -4597,6 +4777,11 @@
         // to the free geocoding service.
         const NEARBY_RADIUS_MILES = 50;
 
+        // Used only when a lane has no cost basis at all (no exact or
+        // nearby archived loads) - a flat per-mile fallback so Calculate
+        // always produces a number instead of nothing.
+        const DEFAULT_RATE_PER_MILE = 4;
+
         async function findNearbyArchivedLoads(pickupCoords, deliveryCoords, excludeIds) {
             const candidates = archivedLoads.filter(l => !excludeIds.includes(l.id));
             const results = [];
@@ -4731,17 +4916,30 @@
                             <div class="quote-result-value">$${low.toLocaleString()} - $${high.toLocaleString()}</div>
                         </div>
                     `;
+                } else if (currentQuoteMiles !== null) {
+                    // No cost basis to work from at all - still worth a
+                    // number rather than nothing, so fall back to a flat
+                    // $/mile default instead of leaving the field blank.
+                    const fallbackEstimate = roundToNearest50(currentQuoteMiles * DEFAULT_RATE_PER_MILE);
+                    priceHtml = `
+                        <p class="quote-no-history">No past loads found on or near this lane yet - here's a rough estimate at $${DEFAULT_RATE_PER_MILE}/mile.</p>
+                        <div class="quote-result-row quote-result-highlight">
+                            <div class="quote-result-label">Estimated Price (at $${DEFAULT_RATE_PER_MILE}/mi)</div>
+                            <div class="quote-result-value">$${fallbackEstimate.toLocaleString()}</div>
+                        </div>
+                    `;
                 } else {
                     priceHtml = `<p class="quote-no-history">No past loads found on or near this lane yet - archive a load on this route to get a price estimate.</p>`;
                 }
 
                 let perMileHtml = '';
                 if (currentQuoteMiles !== null) {
+                    const defaultPerMileValue = allMatchedLoads.length ? '' : DEFAULT_RATE_PER_MILE;
                     perMileHtml = `
                         <div class="quote-permile-section">
                             <div class="form-group">
                                 <label for="quotePerMileRate">Try a $/mile rate</label>
-                                <input type="number" id="quotePerMileRate" step="0.1" min="0" placeholder="e.g., 2.50" oninput="updatePerMileEstimate()">
+                                <input type="number" id="quotePerMileRate" step="0.1" min="0" placeholder="e.g., 2.50" value="${defaultPerMileValue}" oninput="updatePerMileEstimate()">
                             </div>
                             <div class="quote-result-row quote-result-highlight">
                                 <div class="quote-result-label">Price at that rate</div>
@@ -4753,6 +4951,7 @@
 
                 resultsEl.innerHTML = mileageHtml + priceHtml + perMileHtml;
                 resultsEl.classList.add('active');
+                updatePerMileEstimate();
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Calculate';

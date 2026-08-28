@@ -914,6 +914,10 @@
             border-left-color: #26A69A;
         }
 
+        .load-card.invoice-received {
+            border-left-color: #7E57C2;
+        }
+
         .load-card-collapsed {
             padding: 12px 20px;
             display: flex;
@@ -1088,6 +1092,11 @@
             color: white;
         }
 
+        .status-badge-compact.invoice-received {
+            background: #7E57C2;
+            color: white;
+        }
+
         .load-stage-nav {
             display: flex;
             gap: 4px;
@@ -1217,6 +1226,12 @@
             text-overflow: ellipsis;
         }
 
+        .archived-date {
+            font-size: 12px;
+            font-weight: 600;
+            color: #999;
+        }
+
         .field-archived-rate {
             flex: 0 0 auto;
             min-width: 90px;
@@ -1225,23 +1240,6 @@
         .field-archived-rate .load-field-value {
             font-weight: 600;
             color: #1a7a3c;
-        }
-
-        .archived-delete-btn {
-            background: none;
-            border: none;
-            font-size: 18px;
-            line-height: 1;
-            padding: 6px 8px;
-            cursor: pointer;
-            border-radius: 6px;
-            flex-shrink: 0;
-            opacity: 0.6;
-        }
-
-        .archived-delete-btn:hover {
-            background: #fdecea;
-            opacity: 1;
         }
 
         .load-card-menu {
@@ -1586,9 +1584,10 @@
                 <button class="tab-btn active" data-tab="active" onclick="switchTab('active')">Active <span class="tab-count" id="tabCountActive"></span></button>
                 <button class="tab-btn" data-tab="delivered" onclick="switchTab('delivered')">Delivered <span class="tab-count" id="tabCountDelivered"></span></button>
                 <button class="tab-btn" data-tab="pod-received" onclick="switchTab('pod-received')">POD Received <span class="tab-count" id="tabCountPodReceived"></span></button>
+                <button class="tab-btn" data-tab="invoice-received" onclick="switchTab('invoice-received')">Invoice Received <span class="tab-count" id="tabCountInvoiceReceived"></span></button>
                 <button class="tab-btn" data-tab="archived" onclick="switchTab('archived')">Archived <span class="tab-count" id="tabCountArchived"></span></button>
                 <div class="board-controls">
-                    <button class="tab-btn archive-all-btn" id="archiveAllBtn" onclick="archiveAllPodReceived()" style="display: none;">📦 Archive All</button>
+                    <button class="tab-btn archive-all-btn" id="archiveAllBtn" onclick="archiveAllInvoiceReceived()" style="display: none;">📦 Archive All</button>
                     <button class="tab-btn" id="wallboardBtn" onclick="toggleWallboardMode()" title="Full screen + auto scroll, for a TV or projector">⛶ Full Screen</button>
                     <button class="tab-btn" id="autoScrollBtn" onclick="toggleAutoScroll()">▶ Auto Scroll</button>
                     <select id="autoScrollSpeed" title="Auto scroll speed">
@@ -1799,6 +1798,57 @@
         </div>
     </div>
 
+    <!-- Edit Archived Load Modal -->
+    <div class="modal" id="editArchivedModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Archived Load</h2>
+                <button class="close-btn" onclick="closeModal('editArchivedModal')">&times;</button>
+            </div>
+            <form id="editArchivedForm" onsubmit="updateArchivedLoad(event)">
+                <div class="form-group">
+                    <label for="editArchivedCarrierName">Carrier Name</label>
+                    <input type="text" id="editArchivedCarrierName" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="editArchivedRateConNumber">Rate Con Number</label>
+                    <input type="text" id="editArchivedRateConNumber" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="editArchivedPickupCity">Pickup City, State</label>
+                    <input type="text" id="editArchivedPickupCity" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="editArchivedPickupDate">Pickup Date</label>
+                    <input type="date" id="editArchivedPickupDate">
+                </div>
+
+                <div class="form-group">
+                    <label for="editArchivedDeliveryCity">Delivery City, State</label>
+                    <input type="text" id="editArchivedDeliveryCity" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="editArchivedDeliveryDate">Delivery Date</label>
+                    <input type="date" id="editArchivedDeliveryDate">
+                </div>
+
+                <div class="form-group">
+                    <label for="editArchivedRate">Carrier Rate ($)</label>
+                    <input type="number" id="editArchivedRate" min="0" step="1">
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="closeModal('editArchivedModal')">Cancel</button>
+                    <button type="submit" class="btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Quote Calculator Modal -->
     <div class="modal" id="quoteCalculatorModal">
         <div class="modal-content">
@@ -1929,14 +1979,15 @@
             db = firebase.firestore();
         }
 
-        const STAGES = ['dispatched', 'loading', 'in-transit', 'unloading', 'delivered', 'pod-received'];
+        const STAGES = ['dispatched', 'loading', 'in-transit', 'unloading', 'delivered', 'pod-received', 'invoice-received'];
         const STAGE_LABELS = {
             'dispatched': 'Dispatched',
             'loading': 'Loading',
             'in-transit': 'In Transit',
             'unloading': 'Unloading',
             'delivered': 'Delivered',
-            'pod-received': 'POD Received'
+            'pod-received': 'POD Received',
+            'invoice-received': 'Invoice Received'
         };
         // Each tab owns a distinct set of stages, so a load lives in exactly
         // one tab and moves along as its status advances.
@@ -1955,6 +2006,7 @@
         let loads = [];
         let archivedLoads = [];
         let editingLoadId = null;
+        let editingArchivedLoadId = null;
         let issuingLoadId = null;
         let notesLoadId = null;
         let expandedLoadId = null;
@@ -2603,6 +2655,8 @@
             } else if (modalId === 'archiveConfirmModal') {
                 resetForm('archiveConfirmForm');
                 archivingLoadId = null;
+            } else if (modalId === 'editArchivedModal') {
+                editingArchivedLoadId = null;
             } else if (modalId === 'quoteCalculatorModal') {
                 resetForm('quoteCalculatorForm');
                 const resultsEl = document.getElementById('quoteResults');
@@ -3810,12 +3864,12 @@
         // Any load that doesn't already have a cached rate (created before
         // extraction existed, or extraction missed the first time) gets its
         // attached PDF re-read here so nobody has to type rates in by hand.
-        async function archiveAllPodReceived() {
-            const target = loads.filter(l => l.status === 'pod-received');
+        async function archiveAllInvoiceReceived() {
+            const target = loads.filter(l => l.status === 'invoice-received');
             if (!target.length) return;
 
             const confirmed = confirm(
-                `Archive all ${target.length} POD Received load${target.length === 1 ? '' : 's'}?\n\n` +
+                `Archive all ${target.length} Invoice Received load${target.length === 1 ? '' : 's'}?\n\n` +
                 `They'll come off the board and be saved for the Quote Calculator, rate con PDFs included.`
             );
             if (!confirmed) return;
@@ -3838,7 +3892,7 @@
             const removedLoads = target.slice();
             if (ids.includes(expandedLoadId)) expandedLoadId = null;
 
-            loads = loads.filter(l => l.status !== 'pod-received');
+            loads = loads.filter(l => l.status !== 'invoice-received');
             archivedLoads = [...records, ...archivedLoads];
             renderLoads();
 
@@ -3846,7 +3900,7 @@
                 await Promise.all(records.map(r => apiArchiveLoad(r)));
                 await apiDeleteLoads(ids);
             } catch (err) {
-                console.error('Failed to archive POD Received loads:', err);
+                console.error('Failed to archive Invoice Received loads:', err);
                 loads = loads.concat(removedLoads);
                 archivedLoads = archivedLoads.filter(l => !ids.includes(l.id));
                 renderLoads();
@@ -3996,9 +4050,11 @@
             const activeCount = loads.filter(l => MAIN_TAB_STAGES.includes(l.status)).length;
             const deliveredCount = loads.filter(l => l.status === 'delivered').length;
             const podReceivedCount = loads.filter(l => l.status === 'pod-received').length;
+            const invoiceReceivedCount = loads.filter(l => l.status === 'invoice-received').length;
             document.getElementById('tabCountActive').textContent = activeCount ? `(${activeCount})` : '';
             document.getElementById('tabCountDelivered').textContent = deliveredCount ? `(${deliveredCount})` : '';
             document.getElementById('tabCountPodReceived').textContent = podReceivedCount ? `(${podReceivedCount})` : '';
+            document.getElementById('tabCountInvoiceReceived').textContent = invoiceReceivedCount ? `(${invoiceReceivedCount})` : '';
             document.getElementById('tabCountArchived').textContent = archivedLoads.length ? `(${archivedLoads.length})` : '';
 
             if (currentTab === 'archived') {
@@ -4006,13 +4062,14 @@
                 return;
             }
 
-            // Only offer the bulk clean where it applies. Hidden during a
+            // Only offer the bulk clean where it applies - now on Invoice
+            // Received, the last stage before archiving. Hidden during a
             // search too, since search spans every tab and the button would
             // act on loads that aren't the ones being shown.
             const archiveAllBtn = document.getElementById('archiveAllBtn');
-            const showCleanAll = currentTab === 'pod-received' && podReceivedCount > 0 && !searchQuery;
+            const showCleanAll = currentTab === 'invoice-received' && invoiceReceivedCount > 0 && !searchQuery;
             archiveAllBtn.style.display = showCleanAll ? '' : 'none';
-            archiveAllBtn.textContent = `📦 Archive All (${podReceivedCount})`;
+            archiveAllBtn.textContent = `📦 Archive All (${invoiceReceivedCount})`;
 
             const visibleLoads = sortLoads(loads.filter(getCurrentViewFilter(searchQuery)));
 
@@ -4041,7 +4098,8 @@
                 const emptyLabels = {
                     'active': ['📭', 'No Active Loads', 'Add your first load to get started'],
                     'delivered': ['📦', 'No Delivered Loads', 'Loads marked Delivered will show up here'],
-                    'pod-received': ['✅', 'No POD Received Loads', 'Loads marked POD Received will show up here']
+                    'pod-received': ['✅', 'No POD Received Loads', 'Loads marked POD Received will show up here'],
+                    'invoice-received': ['🧾', 'No Invoice Received Loads', 'Loads marked Invoice Received will show up here']
                 };
                 const [icon, title, subtitle] = emptyLabels[currentTab];
                 container.innerHTML = `
@@ -4201,23 +4259,77 @@
                     </div>
                     <div class="archived-field">
                         <div class="load-field-label">Pickup</div>
-                        <div class="load-field-value">${escapeHtml(load.pickupCity || '—')}</div>
+                        <div class="load-field-value">${escapeHtml(load.pickupCity || '—')}${load.pickupDate ? ` <span class="archived-date">· ${formatDateShort(load.pickupDate)}</span>` : ''}</div>
                     </div>
                     <div class="archived-field">
                         <div class="load-field-label">Delivery</div>
-                        <div class="load-field-value">${escapeHtml(load.deliveryCity || '—')}</div>
+                        <div class="load-field-value">${escapeHtml(load.deliveryCity || '—')}${load.deliveryDate ? ` <span class="archived-date">· ${formatDateShort(load.deliveryDate)}</span>` : ''}</div>
                     </div>
                     <div class="archived-field field-archived-rate">
                         <div class="load-field-label">Rate</div>
                         <div class="load-field-value">${typeof load.carrierRate === 'number' ? '$' + load.carrierRate.toLocaleString() : '—'}</div>
                     </div>
                     ${load.pdfData ? `<button class="load-pdf-link" onclick="openPdfViewer('${load.id}', event)" title="View rate con PDF">📎</button>` : ''}
-                    <button class="archived-delete-btn" onclick="deleteArchivedLoad('${load.id}')" title="Delete permanently">🗑</button>
+                    <div class="load-card-menu">
+                        <button class="menu-btn" onclick="toggleDropdown('${load.id}', event)">⋮</button>
+                        <div class="dropdown-menu" data-menu="${load.id}">
+                            <button onclick="openEditArchivedModal('${load.id}')">Edit</button>
+                            <button onclick="unarchiveLoad('${load.id}')">↩ Unarchive</button>
+                            <button class="delete" onclick="deleteArchivedLoad('${load.id}')">Delete Permanently</button>
+                        </div>
+                    </div>
                 </div>
             `).join('');
         }
 
+        function openEditArchivedModal(loadId) {
+            const load = archivedLoads.find(l => l.id === loadId);
+            if (load) {
+                editingArchivedLoadId = loadId;
+                document.getElementById('editArchivedCarrierName').value = load.carrierName || '';
+                document.getElementById('editArchivedRateConNumber').value = load.rateConNumber || '';
+                document.getElementById('editArchivedPickupCity').value = load.pickupCity || '';
+                document.getElementById('editArchivedPickupDate').value = load.pickupDate || '';
+                document.getElementById('editArchivedDeliveryCity').value = load.deliveryCity || '';
+                document.getElementById('editArchivedDeliveryDate').value = load.deliveryDate || '';
+                document.getElementById('editArchivedRate').value = typeof load.carrierRate === 'number' ? load.carrierRate : '';
+                document.getElementById('editArchivedModal').classList.add('active');
+            }
+            closeDropdown(loadId);
+        }
+
+        async function updateArchivedLoad(e) {
+            e.preventDefault();
+            const load = archivedLoads.find(l => l.id === editingArchivedLoadId);
+            if (!load) {
+                closeModal('editArchivedModal');
+                return;
+            }
+
+            const previous = { ...load };
+            load.carrierName = document.getElementById('editArchivedCarrierName').value.trim();
+            load.rateConNumber = document.getElementById('editArchivedRateConNumber').value.trim();
+            load.pickupCity = document.getElementById('editArchivedPickupCity').value.trim();
+            load.pickupDate = document.getElementById('editArchivedPickupDate').value;
+            load.deliveryCity = document.getElementById('editArchivedDeliveryCity').value.trim();
+            load.deliveryDate = document.getElementById('editArchivedDeliveryDate').value;
+            const rateRaw = document.getElementById('editArchivedRate').value;
+            load.carrierRate = rateRaw !== '' ? parseFloat(rateRaw) : null;
+            renderLoads();
+            closeModal('editArchivedModal');
+
+            try {
+                await apiArchiveLoad(load);
+            } catch (err) {
+                console.error('Failed to save archived load changes:', err);
+                Object.assign(load, previous);
+                renderLoads();
+                alert('Could not save changes - check your connection and try again.');
+            }
+        }
+
         async function deleteArchivedLoad(id) {
+            closeDropdown(id);
             if (!confirm('Permanently delete this archived load? This cannot be undone.')) return;
 
             const index = archivedLoads.findIndex(l => l.id === id);
@@ -4232,6 +4344,52 @@
                 if (removed) archivedLoads.splice(index, 0, removed);
                 renderLoads();
                 alert('Could not delete the archived load - check your connection and try again.');
+            }
+        }
+
+        // Safety net for a misclick on Archive: puts the load back on the
+        // board in Invoice Received (the stage right before archiving).
+        // Fields that an archived record doesn't keep (phone, notes, times,
+        // problem flags) come back empty rather than blocking the restore.
+        async function unarchiveLoad(id) {
+            closeDropdown(id);
+            const archived = archivedLoads.find(l => l.id === id);
+            if (!archived) return;
+            if (!confirm('Unarchive this load and put it back on the board as Invoice Received?')) return;
+
+            const restored = {
+                id: archived.id,
+                carrierName: archived.carrierName || '',
+                carrierPhone: '',
+                rateConNumber: archived.rateConNumber || '',
+                pickupCity: archived.pickupCity || '',
+                pickupDate: archived.pickupDate || '',
+                pickupTime: '',
+                deliveryCity: archived.deliveryCity || '',
+                deliveryDate: archived.deliveryDate || '',
+                deliveryTime: '',
+                loadNotes: '',
+                pdfName: archived.pdfName || '',
+                pdfData: archived.pdfData || '',
+                carrierRate: typeof archived.carrierRate === 'number' ? archived.carrierRate : null,
+                status: 'invoice-received',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            };
+
+            archivedLoads = archivedLoads.filter(l => l.id !== id);
+            loads.unshift(restored);
+            renderLoads();
+
+            try {
+                await apiCreateLoad(restored);
+                await apiDeleteArchivedLoad(id);
+            } catch (err) {
+                console.error('Failed to unarchive load:', err);
+                loads = loads.filter(l => l.id !== id);
+                archivedLoads = [archived, ...archivedLoads];
+                renderLoads();
+                alert('Could not unarchive the load - check your connection and try again.');
             }
         }
 
@@ -4471,6 +4629,13 @@
         function formatDateWithWeekday(isoDate) {
             const dt = parseIsoDateLocal(isoDate);
             return dt ? dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+        }
+
+        // No weekday - for tight spaces like the Archived tab, where the
+        // date sits inline right next to the city instead of on its own line.
+        function formatDateShort(isoDate) {
+            const dt = parseIsoDateLocal(isoDate);
+            return dt ? dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
         }
 
         function formatDateLong(isoDate) {

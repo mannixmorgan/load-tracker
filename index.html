@@ -616,6 +616,80 @@
             display: none;
         }
 
+        .archive-confirm-summary {
+            background: #f9f9f9;
+            border-radius: 8px;
+            padding: 14px 16px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .archive-confirm-hint {
+            margin-top: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #999;
+        }
+
+        .archive-confirm-note {
+            font-size: 13px;
+            font-weight: 600;
+            color: #999;
+            margin-bottom: 20px;
+        }
+
+        .quote-results {
+            display: none;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+        }
+
+        .quote-results.active {
+            display: block;
+        }
+
+        .quote-result-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+        }
+
+        .quote-result-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: #777;
+        }
+
+        .quote-result-value {
+            font-size: 16px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .quote-result-row.quote-result-highlight {
+            background: #eefaf0;
+            border-radius: 8px;
+            padding: 14px 16px;
+            margin-top: 6px;
+        }
+
+        .quote-result-row.quote-result-highlight .quote-result-value {
+            color: #1a7a3c;
+            font-size: 18px;
+        }
+
+        .quote-no-history {
+            font-size: 13px;
+            font-weight: 600;
+            color: #999;
+            padding: 10px 0;
+        }
+
         .extraction-status.success {
             background: #e8f5e9;
             color: #2e7d32;
@@ -953,23 +1027,23 @@
 
         /* The last arrow removes the load rather than advancing it, so it
            shouldn't look identical to a normal stage step. */
-        .stage-nav-btn.stage-nav-clean {
+        .stage-nav-btn.stage-nav-archive {
             background: #26A69A;
             color: white;
         }
 
-        .stage-nav-btn.stage-nav-clean:hover {
+        .stage-nav-btn.stage-nav-archive:hover {
             background: #1f8e83;
         }
 
         /* Same teal as the per-load clean arrow, so both removal actions
            read as the same kind of thing. */
-        .clean-all-btn {
+        .archive-all-btn {
             background: #26A69A;
             color: white;
         }
 
-        .clean-all-btn:hover {
+        .archive-all-btn:hover {
             background: #1f8e83;
         }
 
@@ -1025,6 +1099,59 @@
 
         .load-pdf-link:hover {
             background: #e8f0f5;
+        }
+
+        /* Archived tab - compact, read-only strip per load. Much smaller
+           than an active-board card since there's no stage, notes, or
+           drag handle to make room for. */
+        .archived-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+            border-left: 3px solid #999;
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            padding: 10px 14px;
+            margin-bottom: 8px;
+        }
+
+        .archived-field {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .archived-field .load-field-value {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .field-archived-rate {
+            flex: 0 0 auto;
+            min-width: 90px;
+        }
+
+        .field-archived-rate .load-field-value {
+            font-weight: 600;
+            color: #1a7a3c;
+        }
+
+        .archived-delete-btn {
+            background: none;
+            border: none;
+            font-size: 18px;
+            line-height: 1;
+            padding: 6px 8px;
+            cursor: pointer;
+            border-radius: 6px;
+            flex-shrink: 0;
+            opacity: 0.6;
+        }
+
+        .archived-delete-btn:hover {
+            background: #fdecea;
+            opacity: 1;
         }
 
         .load-card-menu {
@@ -1360,6 +1487,7 @@
                 </div>
 
                 <div class="header-actions">
+                    <button class="btn-secondary" onclick="openQuoteCalculator()">🧮 Quote Calculator</button>
                     <button class="btn-primary" onclick="openPdfModal()">+ Add Load</button>
                 </div>
             </header>
@@ -1368,8 +1496,9 @@
                 <button class="tab-btn active" data-tab="active" onclick="switchTab('active')">Active <span class="tab-count" id="tabCountActive"></span></button>
                 <button class="tab-btn" data-tab="delivered" onclick="switchTab('delivered')">Delivered <span class="tab-count" id="tabCountDelivered"></span></button>
                 <button class="tab-btn" data-tab="pod-received" onclick="switchTab('pod-received')">POD Received <span class="tab-count" id="tabCountPodReceived"></span></button>
+                <button class="tab-btn" data-tab="archived" onclick="switchTab('archived')">Archived <span class="tab-count" id="tabCountArchived"></span></button>
                 <div class="board-controls">
-                    <button class="tab-btn clean-all-btn" id="cleanAllBtn" onclick="cleanAllPodReceived()" style="display: none;">🧹 Clean All</button>
+                    <button class="tab-btn archive-all-btn" id="archiveAllBtn" onclick="archiveAllPodReceived()" style="display: none;">📦 Archive All</button>
                     <button class="tab-btn" id="wallboardBtn" onclick="toggleWallboardMode()" title="Full screen + auto scroll, for a TV or projector">⛶ Full Screen</button>
                     <button class="tab-btn" id="autoScrollBtn" onclick="toggleAutoScroll()">▶ Auto Scroll</button>
                     <select id="autoScrollSpeed" title="Auto scroll speed">
@@ -1484,6 +1613,10 @@
                         <textarea id="pdfLoadNotes" placeholder="Notes from PDF"></textarea>
                     </div>
 
+                    <!-- Not shown on the board - only used later if this
+                         load gets archived (see the Quote Calculator). -->
+                    <input type="hidden" id="pdfCarrierRate">
+
                     <div class="form-actions">
                         <button type="button" class="btn-secondary" onclick="closeModal('pdfModal')">Cancel</button>
                         <button type="submit" class="btn-primary">Create Load</button>
@@ -1547,6 +1680,60 @@
                     <button type="submit" class="btn-primary">Save</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Archive Confirmation Modal -->
+    <div class="modal" id="archiveConfirmModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📦 Archive Load</h2>
+                <button class="close-btn" onclick="closeModal('archiveConfirmModal')">&times;</button>
+            </div>
+            <form id="archiveConfirmForm" onsubmit="confirmArchiveLoad(event)">
+                <p class="archive-confirm-summary" id="archiveConfirmSummary"></p>
+
+                <div class="form-group">
+                    <label for="archiveConfirmRate">Carrier Rate ($)</label>
+                    <input type="number" id="archiveConfirmRate" min="0" step="1" placeholder="e.g., 1200">
+                    <p class="archive-confirm-hint" id="archiveConfirmRateHint"></p>
+                </div>
+
+                <p class="archive-confirm-note">This removes it from the board and stores it for the Quote Calculator - the rate con PDF stays attached.</p>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="closeModal('archiveConfirmModal')">Cancel</button>
+                    <button type="submit" class="btn-primary">Archive</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Quote Calculator Modal -->
+    <div class="modal" id="quoteCalculatorModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🧮 Quote Calculator</h2>
+                <button class="close-btn" onclick="closeModal('quoteCalculatorModal')">&times;</button>
+            </div>
+            <form id="quoteCalculatorForm" onsubmit="calculateQuote(event)">
+                <div class="form-group">
+                    <label for="quotePickupCity">Pickup City, State</label>
+                    <input type="text" id="quotePickupCity" placeholder="e.g., Dallas, TX" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="quoteDeliveryCity">Delivery City, State</label>
+                    <input type="text" id="quoteDeliveryCity" placeholder="e.g., Atlanta, GA" required>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="closeModal('quoteCalculatorModal')">Close</button>
+                    <button type="submit" class="btn-primary" id="quoteCalculateBtn">Calculate</button>
+                </div>
+            </form>
+
+            <div class="quote-results" id="quoteResults"></div>
         </div>
     </div>
 
@@ -1641,6 +1828,7 @@
 
         let db = null;
         let loadsUnsubscribe = null;
+        let archivedLoadsUnsubscribe = null;
         if (isFirebaseConfigured()) {
             firebase.initializeApp(firebaseConfig);
             db = firebase.firestore();
@@ -1670,6 +1858,7 @@
         ];
 
         let loads = [];
+        let archivedLoads = [];
         let editingLoadId = null;
         let issuingLoadId = null;
         let notesLoadId = null;
@@ -2160,6 +2349,14 @@
             return Promise.all(ids.map((id) => db.collection('loads').doc(id).delete()));
         }
 
+        function apiArchiveLoad(record) {
+            return db.collection('archivedLoads').doc(record.id).set(record);
+        }
+
+        function apiDeleteArchivedLoad(id) {
+            return db.collection('archivedLoads').doc(id).delete();
+        }
+
         function subscribeToLoads() {
             if (loadsUnsubscribe) return;
             loadsUnsubscribe = db.collection('loads').onSnapshot(
@@ -2181,6 +2378,17 @@
             );
         }
 
+        function subscribeToArchivedLoads() {
+            if (archivedLoadsUnsubscribe) return;
+            archivedLoadsUnsubscribe = db.collection('archivedLoads').onSnapshot(
+                (snapshot) => {
+                    archivedLoads = snapshot.docs.map((doc) => doc.data());
+                    if (currentTab === 'archived') renderLoads();
+                },
+                (err) => console.error('Archived loads listener error:', err)
+            );
+        }
+
         function enterApp(user) {
             document.getElementById('authLoadingScreen').style.display = 'none';
             document.getElementById('passwordScreen').style.display = 'none';
@@ -2193,6 +2401,7 @@
                 </div>
             `;
             subscribeToLoads();
+            subscribeToArchivedLoads();
         }
 
         function showSignInScreen() {
@@ -2254,6 +2463,10 @@
                 loadsUnsubscribe();
                 loadsUnsubscribe = null;
             }
+            if (archivedLoadsUnsubscribe) {
+                archivedLoadsUnsubscribe();
+                archivedLoadsUnsubscribe = null;
+            }
             firebase.auth().signOut();
             // onAuthStateChanged above handles showing the sign-in screen.
         }
@@ -2292,6 +2505,14 @@
             } else if (modalId === 'notesModal') {
                 resetForm('notesForm');
                 notesLoadId = null;
+            } else if (modalId === 'archiveConfirmModal') {
+                resetForm('archiveConfirmForm');
+                archivingLoadId = null;
+            } else if (modalId === 'quoteCalculatorModal') {
+                resetForm('quoteCalculatorForm');
+                const resultsEl = document.getElementById('quoteResults');
+                resultsEl.innerHTML = '';
+                resultsEl.classList.remove('active');
             } else if (modalId === 'pdfViewerModal') {
                 // Release the blob URL rather than leaking it.
                 document.getElementById('pdfViewerFrame').src = '';
@@ -2507,8 +2728,26 @@
                     let rateConNumber = '';
                     let pickupCity = '';
                     let deliveryCity = '';
+                    let carrierRate = null;
 
                     const WINDOW = 150; // chars to search after a label
+
+                    // Carrier rate - the line-haul $ amount, listed twice on
+                    // this template (once next to "Amount", once next to
+                    // "Total" - always identical, so either one works).
+                    // Requiring the "$" is what keeps this from ever
+                    // matching the shipment weight, which has no $ sign and
+                    // sits much further across the page - the range check
+                    // alone isn't enough since weight can occasionally read
+                    // under 10,000 too. Rates here always run $50-$9,999.
+                    function extractCarrierRate(searchText) {
+                        const matches = [...searchText.matchAll(/\$\s?([\d,]+(?:\.\d{1,2})?)/g)];
+                        for (const m of matches) {
+                            const value = parseFloat(m[1].replace(/,/g, ''));
+                            if (!isNaN(value) && value >= 50 && value <= 9999) return value;
+                        }
+                        return null;
+                    }
 
                     // Phone numbers in this broker's rate cons sometimes carry
                     // a dialing extension right after the number, e.g.
@@ -3040,11 +3279,13 @@
                     let pickupTime = findLabeledTime([/Pick\s*-?\s*Up\s*Time[:\s]*/i]) || findAppointmentTime(pickupNoteZone) || '';
                     let deliveryTime = findLabeledTime([/Delivery\s*Time[:\s]*/i]) || findAppointmentTime(deliveryNoteZone) || '';
 
+                    carrierRate = extractCarrierRate(text);
 
                     // Fill in the fields
                     if (carrierName) document.getElementById('pdfCarrierName').value = carrierName;
                     if (carrierPhone) document.getElementById('pdfCarrierPhone').value = carrierPhone;
                     if (rateConNumber) document.getElementById('pdfRateConNumber').value = rateConNumber;
+                    if (carrierRate !== null) document.getElementById('pdfCarrierRate').value = carrierRate;
                     if (pickupCity) document.getElementById('pdfPickupCity').value = pickupCity;
                     if (deliveryCity) document.getElementById('pdfDeliveryCity').value = deliveryCity;
                     if (pickupDate) document.getElementById('pdfPickupDate').value = pickupDate;
@@ -3104,6 +3345,12 @@
                 loadNotes: document.getElementById('pdfLoadNotes').value.trim(),
                 pdfName: pendingPdfAttachment ? pendingPdfAttachment.name : '',
                 pdfData: pendingPdfAttachment ? pendingPdfAttachment.data : '',
+                // Not displayed on the board - carried along in case this
+                // load later gets archived for the Quote Calculator.
+                carrierRate: (() => {
+                    const raw = document.getElementById('pdfCarrierRate').value;
+                    return raw ? parseFloat(raw) : null;
+                })(),
                 status: 'dispatched',
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
@@ -3261,7 +3508,7 @@
 
         function openPdfViewer(loadId, e) {
             if (e) e.stopPropagation();
-            const load = loads.find(l => l.id === loadId);
+            const load = loads.find(l => l.id === loadId) || archivedLoads.find(l => l.id === loadId);
             if (!load || !load.pdfData) return;
 
             if (currentPdfUrl) URL.revokeObjectURL(currentPdfUrl);
@@ -3402,65 +3649,118 @@
             }
         }
 
-        // ── Cleaning a finished load off the board ───────────────────
+        // ── Archiving a finished load off the board ─────────────
         // The forward arrow on a POD Received load is the last step: it
-        // clears the load off the board. Loads are no longer removed on any
-        // schedule - they stay until someone advances them off deliberately.
-        // Clears the whole POD Received tab in one go. Cleaning finished
-        // loads one at a time is fine day to day, but they accumulate now
-        // that nothing ages off on its own.
-        async function cleanAllPodReceived() {
+        // archives the load instead of deleting it - the board loses it,
+        // but a shrunk record (lane, carrier, rate, and the rate con PDF)
+        // survives in a separate collection for the Quote Calculator.
+        let archivingLoadId = null;
+
+        // Only what the Quote Calculator (and the Archived tab) actually
+        // need - notes, status history, manual order etc. don't carry over.
+        function buildArchiveRecord(load, carrierRateOverride) {
+            const rate = typeof carrierRateOverride === 'number' && !isNaN(carrierRateOverride)
+                ? carrierRateOverride
+                : (typeof load.carrierRate === 'number' ? load.carrierRate : null);
+            return {
+                id: load.id,
+                carrierName: load.carrierName || '',
+                rateConNumber: load.rateConNumber || '',
+                pickupCity: load.pickupCity || '',
+                deliveryCity: load.deliveryCity || '',
+                pickupDate: load.pickupDate || '',
+                deliveryDate: load.deliveryDate || '',
+                carrierRate: rate,
+                pdfName: load.pdfName || '',
+                pdfData: load.pdfData || '',
+                archivedAt: new Date().toISOString()
+            };
+        }
+
+        // Bulk path keeps the plain confirm() - archiving many at once
+        // doesn't need a per-load rate review the way one at a time does.
+        async function archiveAllPodReceived() {
             const target = loads.filter(l => l.status === 'pod-received');
             if (!target.length) return;
 
             const confirmed = confirm(
-                `Clean all ${target.length} POD Received load${target.length === 1 ? '' : 's'} off the board?\n\n` +
-                `This removes them permanently.`
+                `Archive all ${target.length} POD Received load${target.length === 1 ? '' : 's'}?\n\n` +
+                `They'll come off the board and be saved for the Quote Calculator, rate con PDFs included.`
             );
             if (!confirmed) return;
 
+            const records = target.map(l => buildArchiveRecord(l));
             const ids = target.map(l => l.id);
-            const removed = target.slice();
+            const removedLoads = target.slice();
             if (ids.includes(expandedLoadId)) expandedLoadId = null;
 
             loads = loads.filter(l => l.status !== 'pod-received');
+            archivedLoads = [...records, ...archivedLoads];
             renderLoads();
 
             try {
+                await Promise.all(records.map(r => apiArchiveLoad(r)));
                 await apiDeleteLoads(ids);
             } catch (err) {
-                console.error('Failed to clean POD Received loads:', err);
-                loads = loads.concat(removed);
+                console.error('Failed to archive POD Received loads:', err);
+                loads = loads.concat(removedLoads);
+                archivedLoads = archivedLoads.filter(l => !ids.includes(l.id));
                 renderLoads();
-                alert('Could not clean the loads - check your connection and try again.');
+                alert('Could not archive the loads - check your connection and try again.');
             }
         }
 
-        async function cleanLoad(loadId) {
+        function openArchiveConfirm(loadId) {
             const load = loads.find(l => l.id === loadId);
             if (!load) return;
+            archivingLoadId = loadId;
 
-            const confirmed = confirm(
-                `Clean rate con ${load.rateConNumber} off the board?\n\n` +
-                `${load.carrierName || 'Unknown carrier'}\n` +
-                `${load.pickupCity || '?'} \u2192 ${load.deliveryCity || '?'}\n\n` +
-                `This removes it permanently.`
-            );
-            if (!confirmed) return;
+            document.getElementById('archiveConfirmSummary').innerHTML =
+                `${escapeHtml(load.rateConNumber || 'Unknown RC#')} — ${escapeHtml(load.carrierName || 'Unknown carrier')}<br>` +
+                `${escapeHtml(load.pickupCity || '?')} → ${escapeHtml(load.deliveryCity || '?')}`;
 
-            const index = loads.findIndex(l => l.id === loadId);
-            const removed = index > -1 ? loads[index] : null;
-            loads = loads.filter(l => l.id !== loadId);
-            if (expandedLoadId === loadId) expandedLoadId = null;
+            const rateInput = document.getElementById('archiveConfirmRate');
+            const hint = document.getElementById('archiveConfirmRateHint');
+            if (typeof load.carrierRate === 'number') {
+                rateInput.value = load.carrierRate;
+                hint.textContent = 'Auto-extracted from the rate con - adjust if it\'s wrong.';
+            } else {
+                rateInput.value = '';
+                hint.textContent = 'Could not auto-extract a rate from the PDF - enter it manually.';
+            }
+
+            document.getElementById('archiveConfirmModal').classList.add('active');
+        }
+
+        async function confirmArchiveLoad(e) {
+            e.preventDefault();
+            const load = loads.find(l => l.id === archivingLoadId);
+            if (!load) {
+                closeModal('archiveConfirmModal');
+                return;
+            }
+
+            const rateRaw = document.getElementById('archiveConfirmRate').value;
+            const carrierRate = rateRaw !== '' ? parseFloat(rateRaw) : null;
+            const record = buildArchiveRecord(load, carrierRate);
+
+            const index = loads.findIndex(l => l.id === load.id);
+            const removed = loads[index];
+            loads = loads.filter(l => l.id !== load.id);
+            if (expandedLoadId === load.id) expandedLoadId = null;
+            archivedLoads = [record, ...archivedLoads];
             renderLoads();
+            closeModal('archiveConfirmModal');
 
             try {
-                await apiDeleteLoad(loadId);
+                await apiArchiveLoad(record);
+                await apiDeleteLoad(load.id);
             } catch (err) {
-                console.error('Failed to clean load:', err);
-                if (removed) loads.splice(index, 0, removed);
+                console.error('Failed to archive load:', err);
+                loads.splice(index, 0, removed);
+                archivedLoads = archivedLoads.filter(l => l.id !== record.id);
                 renderLoads();
-                alert('Could not clean the load - check your connection and try again.');
+                alert('Could not archive the load - check your connection and try again.');
             }
         }
 
@@ -3526,14 +3826,20 @@
             document.getElementById('tabCountActive').textContent = activeCount ? `(${activeCount})` : '';
             document.getElementById('tabCountDelivered').textContent = deliveredCount ? `(${deliveredCount})` : '';
             document.getElementById('tabCountPodReceived').textContent = podReceivedCount ? `(${podReceivedCount})` : '';
+            document.getElementById('tabCountArchived').textContent = archivedLoads.length ? `(${archivedLoads.length})` : '';
+
+            if (currentTab === 'archived') {
+                renderArchivedLoads(searchQuery);
+                return;
+            }
 
             // Only offer the bulk clean where it applies. Hidden during a
             // search too, since search spans every tab and the button would
             // act on loads that aren't the ones being shown.
-            const cleanAllBtn = document.getElementById('cleanAllBtn');
+            const archiveAllBtn = document.getElementById('archiveAllBtn');
             const showCleanAll = currentTab === 'pod-received' && podReceivedCount > 0 && !searchQuery;
-            cleanAllBtn.style.display = showCleanAll ? '' : 'none';
-            cleanAllBtn.textContent = `🧹 Clean All (${podReceivedCount})`;
+            archiveAllBtn.style.display = showCleanAll ? '' : 'none';
+            archiveAllBtn.textContent = `📦 Archive All (${podReceivedCount})`;
 
             const visibleLoads = sortLoads(loads.filter(getCurrentViewFilter(searchQuery)));
 
@@ -3624,9 +3930,9 @@
                             >←</button>
                             ${STAGES.indexOf(load.status) === STAGES.length - 1 ? `
                                 <button
-                                    class="stage-nav-btn stage-nav-clean"
-                                    onclick="event.stopPropagation(); cleanLoad('${load.id}')"
-                                    title="Clean this load off the board"
+                                    class="stage-nav-btn stage-nav-archive"
+                                    onclick="event.stopPropagation(); openArchiveConfirm('${load.id}')"
+                                    title="Archive this load"
                                 >→</button>
                             ` : `
                                 <button
@@ -3676,6 +3982,218 @@
                     </div>
                 </div>
             `).join('');
+        }
+
+        // ── Archived tab ─────────────────────────────────────────────
+        // Much smaller cards than the active board - just what the Quote
+        // Calculator (and a quick lookback) actually need: lane, carrier,
+        // rate, and the rate con PDF. No stage nav, no drag handle - an
+        // archived load doesn't move again.
+        function renderArchivedLoads(searchQuery) {
+            const container = document.getElementById('loadsContainer');
+            const statusEl = document.getElementById('searchStatus');
+            statusEl.classList.remove('active');
+            statusEl.textContent = '';
+
+            const matches = archivedLoads.filter((load) => {
+                if (!searchQuery) return true;
+                const haystack = [load.carrierName, load.rateConNumber, load.pickupCity, load.deliveryCity]
+                    .filter(Boolean).join(' ').toLowerCase();
+                return searchQuery.split(/\s+/).every(term => haystack.includes(term));
+            });
+            const sorted = [...matches].sort((a, b) => (b.archivedAt || '').localeCompare(a.archivedAt || ''));
+
+            if (!sorted.length) {
+                container.innerHTML = searchQuery ? `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🔍</div>
+                        <h2>No matches</h2>
+                        <p>Nothing archived matches "${escapeHtml(searchQuery)}".</p>
+                    </div>
+                ` : `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🗄</div>
+                        <h2>No Archived Loads</h2>
+                        <p>Loads you archive from POD Received show up here.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = sorted.map(load => `
+                <div class="archived-card">
+                    <div class="archived-field">
+                        <div class="load-field-label">Carrier</div>
+                        <div class="load-field-value">${escapeHtml(load.carrierName || '—')}</div>
+                    </div>
+                    <div class="archived-field">
+                        <div class="load-field-label">Pickup</div>
+                        <div class="load-field-value">${escapeHtml(load.pickupCity || '—')}</div>
+                    </div>
+                    <div class="archived-field">
+                        <div class="load-field-label">Delivery</div>
+                        <div class="load-field-value">${escapeHtml(load.deliveryCity || '—')}</div>
+                    </div>
+                    <div class="archived-field field-archived-rate">
+                        <div class="load-field-label">Rate</div>
+                        <div class="load-field-value">${typeof load.carrierRate === 'number' ? '$' + load.carrierRate.toLocaleString() : '—'}</div>
+                    </div>
+                    ${load.pdfData ? `<button class="load-pdf-link" onclick="openPdfViewer('${load.id}', event)" title="View rate con PDF">📎</button>` : ''}
+                    <button class="archived-delete-btn" onclick="deleteArchivedLoad('${load.id}')" title="Delete permanently">🗑</button>
+                </div>
+            `).join('');
+        }
+
+        async function deleteArchivedLoad(id) {
+            if (!confirm('Permanently delete this archived load? This cannot be undone.')) return;
+
+            const index = archivedLoads.findIndex(l => l.id === id);
+            const removed = index > -1 ? archivedLoads[index] : null;
+            archivedLoads = archivedLoads.filter(l => l.id !== id);
+            renderLoads();
+
+            try {
+                await apiDeleteArchivedLoad(id);
+            } catch (err) {
+                console.error('Failed to delete archived load:', err);
+                if (removed) archivedLoads.splice(index, 0, removed);
+                renderLoads();
+                alert('Could not delete the archived load - check your connection and try again.');
+            }
+        }
+
+        // ── Quote Calculator ─────────────────────────────────────────
+        // Looks up archived loads on the same lane and, from their carrier
+        // rate, suggests a customer price. We always price in $50
+        // increments, so the range is rounded to the nearest $50 rather
+        // than shown as a raw decimal.
+        function openQuoteCalculator() {
+            document.getElementById('quoteCalculatorForm').reset();
+            const resultsEl = document.getElementById('quoteResults');
+            resultsEl.innerHTML = '';
+            resultsEl.classList.remove('active');
+            document.getElementById('quoteCalculatorModal').classList.add('active');
+        }
+
+        // Lets "Dallas, TX" and "dallas,tx" and "Dallas,  TX." all match the
+        // same lane without requiring exact punctuation/spacing.
+        function normalizeLocation(text) {
+            return (text || '')
+                .toLowerCase()
+                .replace(/\./g, '')
+                .replace(/\s+/g, ' ')
+                .replace(/\s*,\s*/g, ', ')
+                .trim();
+        }
+
+        function findMatchingArchivedLoads(pickup, delivery) {
+            const p = normalizeLocation(pickup);
+            const d = normalizeLocation(delivery);
+            return archivedLoads.filter(load =>
+                normalizeLocation(load.pickupCity) === p && normalizeLocation(load.deliveryCity) === d
+            );
+        }
+
+        function roundToNearest50(value) {
+            return Math.round(value / 50) * 50;
+        }
+
+        // Free, no-API-key geocoder. Distance-only estimate - there's no
+        // routing API behind this, just a straight-line (great-circle)
+        // distance nudged up to roughly approximate actual road miles.
+        async function geocodeCity(cityState) {
+            const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(cityState)}`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('Geocoding request failed');
+            const data = await res.json();
+            if (!data.length) return null;
+            return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+        }
+
+        function haversineMiles(a, b) {
+            const R = 3958.8;
+            const toRad = deg => deg * Math.PI / 180;
+            const dLat = toRad(b.lat - a.lat);
+            const dLon = toRad(b.lon - a.lon);
+            const h = Math.sin(dLat / 2) ** 2 +
+                Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2;
+            return R * 2 * Math.asin(Math.sqrt(h));
+        }
+
+        // Straight-line distance underestimates actual road miles - this
+        // fudge factor gets it in the right ballpark for a quote estimate.
+        const ROAD_DISTANCE_FACTOR = 1.2;
+
+        async function calculateQuote(e) {
+            e.preventDefault();
+            const pickup = document.getElementById('quotePickupCity').value.trim();
+            const delivery = document.getElementById('quoteDeliveryCity').value.trim();
+            if (!pickup || !delivery) return;
+
+            const btn = document.getElementById('quoteCalculateBtn');
+            const resultsEl = document.getElementById('quoteResults');
+            btn.disabled = true;
+            btn.textContent = 'Calculating...';
+            resultsEl.classList.remove('active');
+            resultsEl.innerHTML = '';
+
+            try {
+                const matches = findMatchingArchivedLoads(pickup, delivery);
+
+                let mileageHtml;
+                try {
+                    const [from, to] = await Promise.all([geocodeCity(pickup), geocodeCity(delivery)]);
+                    if (from && to) {
+                        const miles = Math.round(haversineMiles(from, to) * ROAD_DISTANCE_FACTOR);
+                        mileageHtml = `
+                            <div class="quote-result-row">
+                                <div class="quote-result-label">Estimated Mileage</div>
+                                <div class="quote-result-value">${miles.toLocaleString()} mi</div>
+                            </div>
+                        `;
+                    } else {
+                        mileageHtml = `
+                            <div class="quote-result-row">
+                                <div class="quote-result-label">Estimated Mileage</div>
+                                <div class="quote-result-value">City not found</div>
+                            </div>
+                        `;
+                    }
+                } catch (err) {
+                    console.error('Geocoding failed:', err);
+                    mileageHtml = `
+                        <div class="quote-result-row">
+                            <div class="quote-result-label">Estimated Mileage</div>
+                            <div class="quote-result-value">Unavailable</div>
+                        </div>
+                    `;
+                }
+
+                let priceHtml;
+                if (matches.length) {
+                    const avgRate = matches.reduce((sum, load) => sum + (load.carrierRate || 0), 0) / matches.length;
+                    const low = roundToNearest50(avgRate * 1.10);
+                    const high = roundToNearest50(avgRate * 1.20);
+                    priceHtml = `
+                        <div class="quote-result-row">
+                            <div class="quote-result-label">Historical Carrier Rate${matches.length > 1 ? ` (avg of ${matches.length} loads)` : ''}</div>
+                            <div class="quote-result-value">$${Math.round(avgRate).toLocaleString()}</div>
+                        </div>
+                        <div class="quote-result-row quote-result-highlight">
+                            <div class="quote-result-label">Suggested Customer Price</div>
+                            <div class="quote-result-value">$${low.toLocaleString()} - $${high.toLocaleString()}</div>
+                        </div>
+                    `;
+                } else {
+                    priceHtml = `<p class="quote-no-history">No past loads found on this lane yet - archive a load on this route to get a price estimate.</p>`;
+                }
+
+                resultsEl.innerHTML = mileageHtml + priceHtml;
+                resultsEl.classList.add('active');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Calculate';
+            }
         }
 
         function parseIsoDateLocal(isoDate) {

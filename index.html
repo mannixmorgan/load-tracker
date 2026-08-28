@@ -4787,6 +4787,97 @@
         // gets a price range instead of one exact number.
         const RATE_CONSISTENCY_THRESHOLD = 0.05;
 
+        // Past this many miles a haul is "long" - fixed costs (loading,
+        // unloading, per-load overhead) are spread over more distance, so
+        // the going rate per mile is genuinely lower than on a short or
+        // medium haul. Used to bucket your own archived loads so a lane
+        // with no history of its own still gets an estimate scaled to
+        // its length instead of one flat number for every distance.
+        const LONG_HAUL_MILES_THRESHOLD = 800;
+
+        // Lane distances derived for the rate-per-mile fallback below -
+        // separate from the geocode cache since this stores the final
+        // mileage per pickup->delivery pair (direction matters), not raw
+        // coordinates.
+        const LANE_MILES_CACHE_KEY = 'quoteLaneMilesCache';
+        let laneMilesCache = {};
+        try {
+            laneMilesCache = JSON.parse(localStorage.getItem(LANE_MILES_CACHE_KEY)) || {};
+        } catch (err) {
+            laneMilesCache = {};
+        }
+
+        function saveLaneMilesCache() {
+            try {
+                localStorage.setItem(LANE_MILES_CACHE_KEY, JSON.stringify(laneMilesCache));
+            } catch (err) {
+                // Private browsing / storage blocked - just skip persisting.
+            }
+        }
+
+        async function getLaneMiles(pickup, delivery) {
+            const key = `${normalizeLocation(pickup)}|${normalizeLocation(delivery)}`;
+            if (Object.prototype.hasOwnProperty.call(laneMilesCache, key)) {
+                return laneMilesCache[key];
+            }
+
+            let miles = null;
+            try {
+                const [from, to] = await Promise.all([geocodeCity(pickup), geocodeCity(delivery)]);
+                if (from && to) {
+                    try {
+                        miles = await getDrivingMiles(from, to);
+                    } catch (routeErr) {
+                        miles = haversineMiles(from, to) * ROAD_DISTANCE_FACTOR;
+                    }
+                }
+            } catch (err) {
+                miles = null;
+            }
+
+            laneMilesCache[key] = miles;
+            saveLaneMilesCache();
+            return miles;
+        }
+
+        // Looks at every archived load's own $/mile (rate divided by that
+        // lane's distance) and averages within whichever length bucket
+        // (long-haul vs short/medium) matches the lane being quoted - real
+        // rates from your own history, not a guess, and one that already
+        // reflects the long-haul discount instead of a single flat number.
+        async function estimateFallbackRatePerMile(currentMiles) {
+            const longHaulRates = [];
+            const shortMediumRates = [];
+
+            for (const load of archivedLoads) {
+                if (typeof load.carrierRate !== 'number' || load.carrierRate <= 0 || !load.pickupCity || !load.deliveryCity) continue;
+                const miles = await getLaneMiles(load.pickupCity, load.deliveryCity);
+                if (!miles || miles <= 0) continue;
+
+                const perMile = load.carrierRate / miles;
+                if (miles >= LONG_HAUL_MILES_THRESHOLD) {
+                    longHaulRates.push(perMile);
+                } else {
+                    shortMediumRates.push(perMile);
+                }
+            }
+
+            const avg = (arr) => arr.length ? arr.reduce((sum, v) => sum + v, 0) / arr.length : null;
+            const matchingBucket = currentMiles >= LONG_HAUL_MILES_THRESHOLD ? longHaulRates : shortMediumRates;
+            const matchingAvg = avg(matchingBucket);
+            if (matchingAvg !== null) {
+                return { ratePerMile: matchingAvg, sampleSize: matchingBucket.length, matchedLength: true };
+            }
+
+            const overallRates = longHaulRates.concat(shortMediumRates);
+            const overallAvg = avg(overallRates);
+            if (overallAvg !== null) {
+                return { ratePerMile: overallAvg, sampleSize: overallRates.length, matchedLength: false };
+            }
+
+            return null;
+        }
+
         async function findNearbyArchivedLoads(pickupCoords, deliveryCoords, excludeIds) {
             const candidates = archivedLoads.filter(l => !excludeIds.includes(l.id));
             const results = [];
@@ -4904,6 +4995,7 @@
                 const allMatchedLoads = labeledMatches.map(m => m.load);
                 const includesNearby = labeledMatches.some(m => m.label !== 'Exact match');
                 let priceHtml;
+                let fallbackRatePerMile = null;
                 if (allMatchedLoads.length) {
                     const rates = allMatchedLoads.map(load => load.carrierRate || 0);
                     const avgRate = rates.reduce((sum, r) => sum + r, 0) / rates.length;
@@ -4936,14 +5028,31 @@
                         </div>
                     `;
                 } else if (currentQuoteMiles !== null) {
-                    // No cost basis to work from at all - still worth a
-                    // number rather than nothing, so fall back to a flat
-                    // $/mile default instead of leaving the field blank.
-                    const fallbackEstimate = roundToNearest50(currentQuoteMiles * DEFAULT_RATE_PER_MILE);
+                    // No cost basis for this specific lane - still worth a
+                    // number rather than nothing. Try your own history's
+                    // $/mile for hauls this length first, falling all the
+                    // way back to a flat default only if there's no usable
+                    // archived data at all yet.
+                    btn.textContent = 'Estimating from history…';
+                    const model = await estimateFallbackRatePerMile(currentQuoteMiles);
+
+                    fallbackRatePerMile = DEFAULT_RATE_PER_MILE;
+                    let sourceNote = `a flat $${DEFAULT_RATE_PER_MILE}/mile - no archived loads yet to base a rate on`;
+                    if (model) {
+                        // A thin, noisy sample could fit outside any sane
+                        // trucking range - clamp rather than show it.
+                        const clamped = Math.min(Math.max(model.ratePerMile, 1), 10);
+                        fallbackRatePerMile = Math.round(clamped * 100) / 100;
+                        sourceNote = model.matchedLength
+                            ? `$${fallbackRatePerMile.toFixed(2)}/mile - your average on similar-length hauls (${model.sampleSize} load${model.sampleSize === 1 ? '' : 's'})`
+                            : `$${fallbackRatePerMile.toFixed(2)}/mile - your overall average (${model.sampleSize} load${model.sampleSize === 1 ? '' : 's'}, none that long yet)`;
+                    }
+
+                    const fallbackEstimate = roundToNearest50(currentQuoteMiles * fallbackRatePerMile);
                     priceHtml = `
-                        <p class="quote-no-history">No past loads found on or near this lane yet - here's a rough estimate at $${DEFAULT_RATE_PER_MILE}/mile.</p>
+                        <p class="quote-no-history">No past loads found on or near this lane yet - here's a rough estimate at ${sourceNote}.</p>
                         <div class="quote-result-row quote-result-highlight">
-                            <div class="quote-result-label">Estimated Price (at $${DEFAULT_RATE_PER_MILE}/mi)</div>
+                            <div class="quote-result-label">Estimated Price (~$${fallbackRatePerMile.toFixed(2)}/mi)</div>
                             <div class="quote-result-value">$${fallbackEstimate.toLocaleString()}</div>
                         </div>
                     `;
@@ -4953,7 +5062,7 @@
 
                 let perMileHtml = '';
                 if (currentQuoteMiles !== null) {
-                    const defaultPerMileValue = allMatchedLoads.length ? '' : DEFAULT_RATE_PER_MILE;
+                    const defaultPerMileValue = allMatchedLoads.length ? '' : fallbackRatePerMile;
                     perMileHtml = `
                         <div class="quote-permile-section">
                             <div class="form-group">

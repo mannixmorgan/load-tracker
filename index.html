@@ -1203,12 +1203,18 @@
         /* Archived tab - compact, read-only strip per load. Much smaller
            than an active-board card since there's no stage, notes, or
            drag handle to make room for. */
+        /* Grid, not flex - each row shares the exact same column widths
+           (fixed for Rate/PDF/menu, equal fr for the city fields) so every
+           label lines up directly over its value both within a row and
+           down the whole list, instead of each row flexing to its own
+           content and drifting out of alignment with its neighbors. */
         .archived-card {
             background: white;
             border-radius: 8px;
             box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
             border-left: 3px solid #999;
-            display: flex;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr 90px 36px 36px;
             align-items: center;
             gap: 18px;
             padding: 10px 14px;
@@ -1216,7 +1222,6 @@
         }
 
         .archived-field {
-            flex: 1;
             min-width: 0;
         }
 
@@ -1232,14 +1237,16 @@
             color: #999;
         }
 
-        .field-archived-rate {
-            flex: 0 0 auto;
-            min-width: 90px;
-        }
-
         .field-archived-rate .load-field-value {
             font-weight: 600;
             color: #1a7a3c;
+        }
+
+        /* Always occupies its grid column, even with no PDF attached, so
+           the ⋮ menu after it stays in the same column on every card. */
+        .archived-pdf-slot {
+            display: flex;
+            justify-content: center;
         }
 
         .load-card-menu {
@@ -4269,7 +4276,9 @@
                         <div class="load-field-label">Rate</div>
                         <div class="load-field-value">${typeof load.carrierRate === 'number' ? '$' + load.carrierRate.toLocaleString() : '—'}</div>
                     </div>
-                    ${load.pdfData ? `<button class="load-pdf-link" onclick="openPdfViewer('${load.id}', event)" title="View rate con PDF">📎</button>` : ''}
+                    <div class="archived-pdf-slot">
+                        ${load.pdfData ? `<button class="load-pdf-link" onclick="openPdfViewer('${load.id}', event)" title="View rate con PDF">📎</button>` : ''}
+                    </div>
                     <div class="load-card-menu">
                         <button class="menu-btn" onclick="toggleDropdown('${load.id}', event)">⋮</button>
                         <div class="dropdown-menu" data-menu="${load.id}">

@@ -1530,6 +1530,11 @@
     </style>
 </head>
 <body>
+    <!-- City autocomplete suggestions for every pickup/delivery field -
+         populated by refreshCityDatalist() with common freight hubs plus
+         whatever cities actually show up in your loads/archive. -->
+    <datalist id="cityDatalist"></datalist>
+
     <!-- Whole-page PDF drop overlay -->
     <div class="page-drop-overlay" id="pageDropOverlay">
         <div>📄 Drop to import this rate con</div>
@@ -1687,7 +1692,7 @@
 
                     <div class="form-group">
                         <label for="pdfPickupCity">Pickup City, State *</label>
-                        <input type="text" id="pdfPickupCity" required placeholder="e.g., Denver, CO">
+                        <input type="text" id="pdfPickupCity" required placeholder="e.g., Denver, CO" list="cityDatalist">
                     </div>
 
                     <div class="form-group">
@@ -1702,7 +1707,7 @@
 
                     <div class="form-group">
                         <label for="pdfDeliveryCity">Delivery City, State *</label>
-                        <input type="text" id="pdfDeliveryCity" required placeholder="e.g., Chicago, IL">
+                        <input type="text" id="pdfDeliveryCity" required placeholder="e.g., Chicago, IL" list="cityDatalist">
                     </div>
 
                     <div class="form-group">
@@ -1836,7 +1841,7 @@
 
                 <div class="form-group">
                     <label for="editArchivedPickupCity">Pickup City, State</label>
-                    <input type="text" id="editArchivedPickupCity" required>
+                    <input type="text" id="editArchivedPickupCity" required list="cityDatalist">
                 </div>
 
                 <div class="form-group">
@@ -1846,7 +1851,7 @@
 
                 <div class="form-group">
                     <label for="editArchivedDeliveryCity">Delivery City, State</label>
-                    <input type="text" id="editArchivedDeliveryCity" required>
+                    <input type="text" id="editArchivedDeliveryCity" required list="cityDatalist">
                 </div>
 
                 <div class="form-group">
@@ -1877,12 +1882,12 @@
             <form id="quoteCalculatorForm" onsubmit="calculateQuote(event)">
                 <div class="form-group">
                     <label for="quotePickupCity">Pickup City, State</label>
-                    <input type="text" id="quotePickupCity" placeholder="e.g., Dallas, TX" required>
+                    <input type="text" id="quotePickupCity" placeholder="e.g., Dallas, TX" required list="cityDatalist">
                 </div>
 
                 <div class="form-group">
                     <label for="quoteDeliveryCity">Delivery City, State</label>
-                    <input type="text" id="quoteDeliveryCity" placeholder="e.g., Atlanta, GA" required>
+                    <input type="text" id="quoteDeliveryCity" placeholder="e.g., Atlanta, GA" required list="cityDatalist">
                 </div>
 
                 <div class="form-actions">
@@ -1925,7 +1930,7 @@
 
                 <div class="form-group">
                     <label for="editPickupCity">Pickup City, State</label>
-                    <input type="text" id="editPickupCity" required>
+                    <input type="text" id="editPickupCity" required list="cityDatalist">
                 </div>
 
                 <div class="form-group">
@@ -1940,7 +1945,7 @@
 
                 <div class="form-group">
                     <label for="editDeliveryCity">Delivery City, State</label>
-                    <input type="text" id="editDeliveryCity" required>
+                    <input type="text" id="editDeliveryCity" required list="cityDatalist">
                 </div>
 
                 <div class="form-group">
@@ -2522,6 +2527,40 @@
             return db.collection('archivedLoads').doc(id).delete();
         }
 
+        // Common freight hubs, seeded so autocomplete is useful right away
+        // even before any loads exist. Cities that actually show up in
+        // your loads/archive get added on top and make the list more
+        // relevant to your own lanes over time.
+        const COMMON_CITIES = [
+            'Dallas, TX', 'Fort Worth, TX', 'Houston, TX', 'San Antonio, TX', 'Austin, TX',
+            'El Paso, TX', 'Lubbock, TX', 'Amarillo, TX', 'Midland, TX', 'Odessa, TX',
+            'Tyler, TX', 'Waco, TX', 'Corpus Christi, TX', 'Beaumont, TX',
+            'Oklahoma City, OK', 'Tulsa, OK', 'Little Rock, AR', 'Shreveport, LA',
+            'New Orleans, LA', 'Baton Rouge, LA', 'Memphis, TN', 'Nashville, TN',
+            'Atlanta, GA', 'Birmingham, AL', 'Jackson, MS', 'Kansas City, MO',
+            'St. Louis, MO', 'Denver, CO', 'Albuquerque, NM', 'Phoenix, AZ',
+            'Chicago, IL', 'Indianapolis, IN', 'Louisville, KY', 'Charlotte, NC',
+            'Jacksonville, FL', 'Miami, FL', 'Columbus, OH'
+        ];
+
+        // Rebuilds the shared <datalist> every city input points to.
+        function refreshCityDatalist() {
+            const seen = new Map();
+            const add = (city) => {
+                if (!city) return;
+                const key = normalizeLocation(city);
+                if (key && !seen.has(key)) seen.set(key, city);
+            };
+
+            loads.forEach(l => { add(l.pickupCity); add(l.deliveryCity); });
+            archivedLoads.forEach(l => { add(l.pickupCity); add(l.deliveryCity); });
+            COMMON_CITIES.forEach(add);
+
+            document.getElementById('cityDatalist').innerHTML = Array.from(seen.values())
+                .map(city => `<option value="${escapeHtml(city)}"></option>`)
+                .join('');
+        }
+
         function subscribeToLoads() {
             if (loadsUnsubscribe) return;
             loadsUnsubscribe = db.collection('loads').onSnapshot(
@@ -2529,6 +2568,7 @@
                     loads = snapshot.docs.map((doc) => doc.data());
                     // Ordering is applied at render time via sortLoads().
                     renderLoads();
+                    refreshCityDatalist();
                 },
                 (err) => {
                     console.error('Firestore listener error:', err);
@@ -2549,6 +2589,7 @@
                 (snapshot) => {
                     archivedLoads = snapshot.docs.map((doc) => doc.data());
                     if (currentTab === 'archived') renderLoads();
+                    refreshCityDatalist();
                 },
                 (err) => console.error('Archived loads listener error:', err)
             );

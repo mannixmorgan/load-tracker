@@ -2662,6 +2662,14 @@
             }
         });
 
+        // Enter calculates a quote from either city field, same as above.
+        document.getElementById('quoteCalculatorForm').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                e.target.form.requestSubmit();
+            }
+        });
+
         function handleDragOver(event) {
             event.preventDefault();
             event.stopPropagation();

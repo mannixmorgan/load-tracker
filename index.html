@@ -780,6 +780,13 @@
             flex-shrink: 0;
         }
 
+        .quote-history-distance {
+            font-size: 11px;
+            font-weight: 600;
+            color: #999;
+            margin-top: 2px;
+        }
+
         .extraction-status.success {
             background: #e8f5e9;
             color: #2e7d32;
@@ -4427,21 +4434,23 @@
         // Calculate runs. Deliberately much smaller/denser than an
         // Archived-tab card since it's just a quick lookup, not something
         // you act on from here.
-        function renderQuoteHistoryPanel(matches) {
+        // labeledMatches: [{ load, label }] - label is "Exact match" or
+        // "~N mi away" for a similar-lane match within NEARBY_RADIUS_MILES.
+        function renderQuoteHistoryPanel(labeledMatches) {
             const panel = document.getElementById('quoteHistoryPanel');
             const listEl = document.getElementById('quoteHistoryList');
 
-            if (!matches.length) {
+            if (!labeledMatches.length) {
                 listEl.innerHTML = '<p class="quote-history-empty">No past loads found on this lane yet.</p>';
             } else {
-                const sorted = [...matches].sort((a, b) => (b.archivedAt || '').localeCompare(a.archivedAt || ''));
-                listEl.innerHTML = sorted.map(load => `
+                listEl.innerHTML = labeledMatches.map(({ load, label }) => `
                     <div class="quote-history-item">
                         <div class="quote-history-lane">${escapeHtml(load.pickupCity || '?')} → ${escapeHtml(load.deliveryCity || '?')}</div>
                         <div class="quote-history-meta">
                             <div class="quote-history-carrier">${escapeHtml(load.carrierName || '—')}</div>
                             <div class="quote-history-rate">${typeof load.carrierRate === 'number' ? '$' + load.carrierRate.toLocaleString() : '—'}</div>
                         </div>
+                        <div class="quote-history-distance">${escapeHtml(label)}</div>
                     </div>
                 `).join('');
             }
@@ -4472,15 +4481,43 @@
             return Math.round(value / 50) * 50;
         }
 
+        // Geocoding results are cached (keyed by normalized city text) in
+        // memory and in localStorage - the same handful of regional cities
+        // come up over and over, so repeat lookups are instant after the
+        // first time and the free geocoder isn't hit any harder than it
+        // has to be.
+        const GEOCODE_CACHE_KEY = 'quoteGeocodeCache';
+        let geocodeCache = {};
+        try {
+            geocodeCache = JSON.parse(localStorage.getItem(GEOCODE_CACHE_KEY)) || {};
+        } catch (err) {
+            geocodeCache = {};
+        }
+
+        function saveGeocodeCache() {
+            try {
+                localStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(geocodeCache));
+            } catch (err) {
+                // Private browsing / storage blocked - just skip persisting.
+            }
+        }
+
         // Free, no-API-key geocoder - turns a city/state into coordinates
         // so a route can be looked up between them.
         async function geocodeCity(cityState) {
+            const key = normalizeLocation(cityState);
+            if (!key) return null;
+            if (Object.prototype.hasOwnProperty.call(geocodeCache, key)) {
+                return geocodeCache[key];
+            }
             const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(cityState)}`;
             const res = await fetch(url);
             if (!res.ok) throw new Error('Geocoding request failed');
             const data = await res.json();
-            if (!data.length) return null;
-            return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+            const coords = data.length ? { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) } : null;
+            geocodeCache[key] = coords;
+            saveGeocodeCache();
+            return coords;
         }
 
         // Actual road-following distance via OSRM's free public routing
@@ -4510,6 +4547,36 @@
             return R * 2 * Math.asin(Math.sqrt(h));
         }
         const ROAD_DISTANCE_FACTOR = 1.2;
+
+        // Loads on a similar-but-not-identical lane - regional loads that
+        // never matched on exact city text still count as a fair comp for
+        // pricing, e.g. a Midland-Tyler quote should also pull up an
+        // Odessa-Lindale load. Geocoded one at a time (the cache above
+        // absorbs repeat cities) rather than all at once, to stay polite
+        // to the free geocoding service.
+        const NEARBY_RADIUS_MILES = 50;
+
+        async function findNearbyArchivedLoads(pickupCoords, deliveryCoords, excludeIds) {
+            const candidates = archivedLoads.filter(l => !excludeIds.includes(l.id));
+            const results = [];
+            for (const load of candidates) {
+                let loadPickupCoords, loadDeliveryCoords;
+                try {
+                    loadPickupCoords = await geocodeCity(load.pickupCity);
+                    loadDeliveryCoords = await geocodeCity(load.deliveryCity);
+                } catch (err) {
+                    continue;
+                }
+                if (!loadPickupCoords || !loadDeliveryCoords) continue;
+
+                const pickupDist = haversineMiles(pickupCoords, loadPickupCoords);
+                const deliveryDist = haversineMiles(deliveryCoords, loadDeliveryCoords);
+                if (pickupDist <= NEARBY_RADIUS_MILES && deliveryDist <= NEARBY_RADIUS_MILES) {
+                    results.push({ load, distance: Math.max(pickupDist, deliveryDist) });
+                }
+            }
+            return results;
+        }
 
         // Set by calculateQuote whenever a mileage is known, so the $/mile
         // experimentation box can react live without another round trip.
@@ -4546,8 +4613,9 @@
             currentQuoteMiles = null;
 
             try {
-                const matches = findMatchingArchivedLoads(pickup, delivery);
-                renderQuoteHistoryPanel(matches);
+                const exactMatches = [...findMatchingArchivedLoads(pickup, delivery)]
+                    .sort((a, b) => (b.archivedAt || '').localeCompare(a.archivedAt || ''));
+                let labeledMatches = exactMatches.map(load => ({ load, label: 'Exact match' }));
 
                 let mileageHtml;
                 try {
@@ -4570,6 +4638,18 @@
                                 <div class="quote-result-value">${miles.toLocaleString()} mi${note}</div>
                             </div>
                         `;
+
+                        // Regional loads that never matched on exact city
+                        // text still count as a fair comp - a load picked
+                        // up and delivered within 50mi of this lane on
+                        // both ends.
+                        btn.textContent = 'Searching nearby lanes…';
+                        const excludeIds = exactMatches.map(l => l.id);
+                        const nearby = await findNearbyArchivedLoads(from, to, excludeIds);
+                        nearby.sort((a, b) => a.distance - b.distance);
+                        labeledMatches = labeledMatches.concat(
+                            nearby.map(({ load, distance }) => ({ load, label: `~${Math.round(distance)} mi away` }))
+                        );
                     } else {
                         mileageHtml = `
                             <div class="quote-result-row">
@@ -4588,14 +4668,21 @@
                     `;
                 }
 
+                renderQuoteHistoryPanel(labeledMatches);
+
+                const allMatchedLoads = labeledMatches.map(m => m.load);
+                const includesNearby = labeledMatches.some(m => m.label !== 'Exact match');
                 let priceHtml;
-                if (matches.length) {
-                    const avgRate = matches.reduce((sum, load) => sum + (load.carrierRate || 0), 0) / matches.length;
+                if (allMatchedLoads.length) {
+                    const avgRate = allMatchedLoads.reduce((sum, load) => sum + (load.carrierRate || 0), 0) / allMatchedLoads.length;
                     const low = roundToNearest50(avgRate * 1.10);
                     const high = roundToNearest50(avgRate * 1.20);
+                    const countLabel = allMatchedLoads.length > 1
+                        ? ` (avg of ${allMatchedLoads.length} loads${includesNearby ? ` within ${NEARBY_RADIUS_MILES}mi` : ''})`
+                        : (includesNearby ? ` (within ${NEARBY_RADIUS_MILES}mi)` : '');
                     priceHtml = `
                         <div class="quote-result-row">
-                            <div class="quote-result-label">Historical Carrier Rate${matches.length > 1 ? ` (avg of ${matches.length} loads)` : ''}</div>
+                            <div class="quote-result-label">Historical Carrier Rate${countLabel}</div>
                             <div class="quote-result-value">$${Math.round(avgRate).toLocaleString()}</div>
                         </div>
                         <div class="quote-result-row quote-result-highlight">
@@ -4604,7 +4691,7 @@
                         </div>
                     `;
                 } else {
-                    priceHtml = `<p class="quote-no-history">No past loads found on this lane yet - archive a load on this route to get a price estimate.</p>`;
+                    priceHtml = `<p class="quote-no-history">No past loads found on or near this lane yet - archive a load on this route to get a price estimate.</p>`;
                 }
 
                 let perMileHtml = '';

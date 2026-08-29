@@ -4999,11 +4999,6 @@
         // to the free geocoding service.
         const NEARBY_RADIUS_MILES = 50;
 
-        // How far a matched load's rate can sit from the average (as a
-        // fraction of it) before the lane counts as "inconsistent" and
-        // gets a price range instead of one exact number.
-        const RATE_CONSISTENCY_THRESHOLD = 0.05;
-
         async function findNearbyArchivedLoads(pickupCoords, deliveryCoords, excludeIds) {
             const candidates = archivedLoads.filter(l => !excludeIds.includes(l.id));
             const results = [];
@@ -5140,19 +5135,11 @@
                         ? ` (avg of ${allMatchedLoads.length} loads${includesNearby ? ` within ${NEARBY_RADIUS_MILES}mi` : ''})`
                         : (includesNearby ? ` (within ${NEARBY_RADIUS_MILES}mi)` : '');
 
-                    // A single load, or several that all paid close to the
-                    // same rate, is a confident basis for one exact number -
-                    // no need to hedge with a spread. Once the historical
-                    // rates actually disagree with each other, fall back to
-                    // the 10-20% range, still centered on the average.
-                    const maxDeviationPct = rates.length > 1
-                        ? Math.max(...rates.map(r => Math.abs(r - avgRate))) / avgRate
-                        : 0;
-                    const isConsistent = maxDeviationPct <= RATE_CONSISTENCY_THRESHOLD;
-
-                    const suggestedPriceValue = isConsistent
-                        ? `$${roundToNearest50(avgRate * 1.15).toLocaleString()}`
-                        : `$${roundToNearest50(avgRate * 1.10).toLocaleString()} - $${roundToNearest50(avgRate * 1.20).toLocaleString()}`;
+                    // Always a range (10-20% over the carrier rate), same
+                    // as the manual $/mile estimate below - never a single
+                    // exact number.
+                    const low = roundToNearest50(avgRate * 1.10);
+                    const high = roundToNearest50(avgRate * 1.20);
 
                     priceHtml = `
                         <div class="quote-result-row">
@@ -5161,7 +5148,7 @@
                         </div>
                         <div class="quote-result-row quote-result-highlight">
                             <div class="quote-result-label">Suggested Customer Price</div>
-                            <div class="quote-result-value">${suggestedPriceValue}</div>
+                            <div class="quote-result-value">$${low.toLocaleString()} - $${high.toLocaleString()}</div>
                         </div>
                     `;
                 } else {

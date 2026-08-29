@@ -820,6 +820,23 @@
             flex-shrink: 0;
         }
 
+        /* Same idea as .load-pdf-link on the board/archived cards, just
+           sized down to fit this panel's much denser rows. */
+        .quote-history-pdf-link {
+            background: none;
+            border: none;
+            font-size: 14px;
+            line-height: 1;
+            padding: 2px 4px;
+            cursor: pointer;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+
+        .quote-history-pdf-link:hover {
+            background: #e8f0f5;
+        }
+
         .quote-history-distance {
             font-size: 11px;
             font-weight: 600;
@@ -5252,6 +5269,7 @@
                         <div class="quote-history-meta">
                             <div class="quote-history-carrier">${escapeHtml(load.carrierName || '—')}</div>
                             <div class="quote-history-rate">${typeof load.carrierRate === 'number' ? '$' + load.carrierRate.toLocaleString() : '—'}</div>
+                            ${(load.pdfData || load.hasPdf) ? `<button class="quote-history-pdf-link" onclick="openPdfViewer('${load.id}', event)" title="View rate con PDF">📎</button>` : ''}
                         </div>
                         <div class="quote-history-distance">${escapeHtml(label)}</div>
                     </div>

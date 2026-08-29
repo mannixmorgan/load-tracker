@@ -1301,6 +1301,11 @@
             color: #999;
         }
 
+        .archived-load-more-btn {
+            display: block;
+            margin: 16px auto 0;
+        }
+
         .field-archived-rate .load-field-value {
             font-weight: 600;
             color: #1a7a3c;
@@ -2139,6 +2144,7 @@
             document.querySelectorAll('.tab-btn').forEach((btn) => {
                 btn.classList.toggle('active', btn.dataset.tab === tab);
             });
+            if (tab === 'archived') archivedVisibleCount = ARCHIVED_PAGE_SIZE;
             renderLoads();
         }
 
@@ -2611,12 +2617,41 @@
             return Promise.all(ids.map((id) => db.collection('loads').doc(id).delete()));
         }
 
+        // merge:true, not a full overwrite - a record built by
+        // buildArchiveRecord() never carries pdfData (see below), so a
+        // plain .set() here would silently wipe out the inline PDF on any
+        // archived load saved before that split existed. Leaving whatever
+        // isn't in the written object alone is exactly what's needed for
+        // old and new records to coexist without a migration.
         function apiArchiveLoad(record) {
-            return db.collection('archivedLoads').doc(record.id).set(record);
+            return db.collection('archivedLoads').doc(record.id).set(record, { merge: true });
         }
 
         function apiDeleteArchivedLoad(id) {
             return db.collection('archivedLoads').doc(id).delete();
+        }
+
+        // The rate con PDF for an archived load lives in its own
+        // collection/doc, fetched only when someone actually opens it -
+        // keeps the archivedLoads sync itself light (a few hundred bytes
+        // per load) no matter how many loads carry a PDF, since that's
+        // the part that actually gets big (up to ~900KB base64 each).
+        function apiSaveArchivedLoadPdf(id, pdfData) {
+            return db.collection('archivedLoadPdfs').doc(id).set({ pdfData });
+        }
+
+        function apiDeleteArchivedLoadPdf(id) {
+            return db.collection('archivedLoadPdfs').doc(id).delete();
+        }
+
+        async function apiGetArchivedLoadPdf(id) {
+            const doc = await db.collection('archivedLoadPdfs').doc(id).get();
+            return doc.exists ? doc.data().pdfData : null;
+        }
+
+        async function apiArchiveLoadWithPdf(record, pdfData) {
+            await apiArchiveLoad(record);
+            if (pdfData) await apiSaveArchivedLoadPdf(record.id, pdfData);
         }
 
         // Common freight hubs, seeded so autocomplete is useful right away
@@ -4005,13 +4040,33 @@
             return URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
         }
 
-        function openPdfViewer(loadId, e) {
+        async function openPdfViewer(loadId, e) {
             if (e) e.stopPropagation();
             const load = loads.find(l => l.id === loadId) || archivedLoads.find(l => l.id === loadId);
-            if (!load || !load.pdfData) return;
+            if (!load || !(load.pdfData || load.hasPdf)) return;
+
+            let pdfData = load.pdfData || null;
+            if (!pdfData && load.hasPdf) {
+                // Archived after the PDF-splitting change - not inline,
+                // fetch it from its own doc. Open the modal right away
+                // with a loading state instead of waiting in silence.
+                document.getElementById('pdfViewerTitle').textContent = 'Loading…';
+                document.getElementById('pdfViewerFrame').src = '';
+                document.getElementById('pdfViewerModal').classList.add('active');
+                try {
+                    pdfData = await apiGetArchivedLoadPdf(loadId);
+                } catch (err) {
+                    console.error('Failed to load archived PDF:', err);
+                }
+                if (!pdfData) {
+                    document.getElementById('pdfViewerTitle').textContent = 'Could not load PDF';
+                    return;
+                }
+            }
+            if (!pdfData) return;
 
             if (currentPdfUrl) URL.revokeObjectURL(currentPdfUrl);
-            currentPdfUrl = base64ToBlobUrl(load.pdfData);
+            currentPdfUrl = base64ToBlobUrl(pdfData);
 
             document.getElementById('pdfViewerTitle').textContent =
                 'Rate Con ' + (load.rateConNumber || '') + (load.carrierName ? ' — ' + load.carrierName : '');
@@ -4171,7 +4226,10 @@
                 deliveryDate: load.deliveryDate || '',
                 carrierRate: rate,
                 pdfName: load.pdfName || '',
-                pdfData: load.pdfData || '',
+                // The actual PDF bytes are saved separately via
+                // apiArchiveLoadWithPdf() - this just flags that one
+                // exists, so the 📎 icon and PDF viewer know to fetch it.
+                hasPdf: !!load.pdfData,
                 archivedAt: new Date().toISOString()
             };
         }
@@ -4214,7 +4272,7 @@
             renderLoads();
 
             try {
-                await Promise.all(records.map(r => apiArchiveLoad(r)));
+                await Promise.all(records.map((r, i) => apiArchiveLoadWithPdf(r, target[i].pdfData)));
                 await apiDeleteLoads(ids);
             } catch (err) {
                 console.error('Failed to archive Invoice Received loads:', err);
@@ -4297,7 +4355,7 @@
             closeModal('archiveConfirmModal');
 
             try {
-                await apiArchiveLoad(record);
+                await apiArchiveLoadWithPdf(record, load.pdfData);
                 await apiDeleteLoad(load.id);
             } catch (err) {
                 console.error('Failed to archive load:', err);
@@ -4537,6 +4595,20 @@
         // Calculator (and a quick lookback) actually need: lane, carrier,
         // rate, and the rate con PDF. No stage nav, no drag handle - an
         // archived load doesn't move again.
+
+        // Rendered incrementally rather than all at once - the whole set
+        // still syncs live (it's cheap now that the PDF itself lives in
+        // its own collection), but a few hundred cards on one page isn't
+        // a great scroll even so. "Load More" just reveals further into
+        // the same already-loaded, already-sorted list.
+        const ARCHIVED_PAGE_SIZE = 50;
+        let archivedVisibleCount = ARCHIVED_PAGE_SIZE;
+
+        function loadMoreArchived() {
+            archivedVisibleCount += ARCHIVED_PAGE_SIZE;
+            renderLoads();
+        }
+
         function renderArchivedLoads(searchQuery) {
             const container = document.getElementById('loadsContainer');
             const statusEl = document.getElementById('searchStatus');
@@ -4568,7 +4640,10 @@
                 return;
             }
 
-            container.innerHTML = sorted.map(load => `
+            const visible = sorted.slice(0, archivedVisibleCount);
+            const remaining = sorted.length - visible.length;
+
+            const cardsHtml = visible.map(load => `
                 <div class="archived-card">
                     <div class="archived-field">
                         <div class="load-field-label">Carrier</div>
@@ -4587,7 +4662,7 @@
                         <div class="load-field-value">${typeof load.carrierRate === 'number' ? '$' + load.carrierRate.toLocaleString() : '—'}</div>
                     </div>
                     <div class="archived-pdf-slot">
-                        ${load.pdfData ? `<button class="load-pdf-link" onclick="openPdfViewer('${load.id}', event)" title="View rate con PDF">📎</button>` : ''}
+                        ${(load.pdfData || load.hasPdf) ? `<button class="load-pdf-link" onclick="openPdfViewer('${load.id}', event)" title="View rate con PDF">📎</button>` : ''}
                     </div>
                     <div class="load-card-menu">
                         <button class="menu-btn" onclick="toggleDropdown('${load.id}', event)">⋮</button>
@@ -4599,6 +4674,12 @@
                     </div>
                 </div>
             `).join('');
+
+            const loadMoreHtml = remaining > 0 ? `
+                <button class="btn-secondary archived-load-more-btn" onclick="loadMoreArchived()">Load 50 More (${remaining} remaining)</button>
+            ` : '';
+
+            container.innerHTML = cardsHtml + loadMoreHtml;
         }
 
         function openEditArchivedModal(loadId) {
@@ -4658,6 +4739,7 @@
 
             try {
                 await apiDeleteArchivedLoad(id);
+                await apiDeleteArchivedLoadPdf(id);
             } catch (err) {
                 console.error('Failed to delete archived load:', err);
                 if (removed) archivedLoads.splice(index, 0, removed);
@@ -4676,6 +4758,18 @@
             if (!archived) return;
             if (!confirm('Unarchive this load and put it back on the board as Invoice Received?')) return;
 
+            // Legacy records still carry the PDF inline; newer ones need it
+            // fetched back from its own collection before the restored
+            // `loads` doc (which does keep pdfData inline) can be built.
+            let pdfData = archived.pdfData || '';
+            if (!pdfData && archived.hasPdf) {
+                try {
+                    pdfData = await apiGetArchivedLoadPdf(id) || '';
+                } catch (err) {
+                    console.error('Failed to fetch archived PDF while unarchiving:', err);
+                }
+            }
+
             const restored = {
                 id: archived.id,
                 carrierName: archived.carrierName || '',
@@ -4689,7 +4783,7 @@
                 deliveryTime: '',
                 loadNotes: '',
                 pdfName: archived.pdfName || '',
-                pdfData: archived.pdfData || '',
+                pdfData,
                 carrierRate: typeof archived.carrierRate === 'number' ? archived.carrierRate : null,
                 status: 'invoice-received',
                 createdAt: new Date().toISOString(),
@@ -4703,6 +4797,7 @@
             try {
                 await apiCreateLoad(restored);
                 await apiDeleteArchivedLoad(id);
+                await apiDeleteArchivedLoadPdf(id);
             } catch (err) {
                 console.error('Failed to unarchive load:', err);
                 loads = loads.filter(l => l.id !== id);

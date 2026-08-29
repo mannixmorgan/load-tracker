@@ -9,6 +9,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore-compat.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         * {
             margin: 0;
@@ -722,6 +724,44 @@
             padding: 18px;
         }
 
+        /* Route preview, on the opposite side of the modal from the past-
+           loads panel - a quick "where in the country is this" glance,
+           especially useful for an unfamiliar city. */
+        .quote-map-panel {
+            display: none;
+            background: white;
+            border-radius: 12px;
+            width: 320px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            padding: 18px;
+        }
+
+        .quote-map-panel.active {
+            display: block;
+        }
+
+        .quote-map-panel h3 {
+            font-size: 13px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        #quoteMapContainer {
+            height: 280px;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #eef2f5;
+        }
+
+        /* Leaflet's default blue is fine, but drawn a touch thicker so the
+           route reads clearly at a glance. */
+        .quote-route-line {
+            stroke: #2563eb;
+        }
+
         .quote-history-panel.active {
             display: block;
         }
@@ -1259,6 +1299,11 @@
             font-size: 12px;
             font-weight: 600;
             color: #999;
+        }
+
+        .archived-load-more-btn {
+            display: block;
+            margin: 16px auto 0;
         }
 
         .field-archived-rate .load-field-value {
@@ -1921,6 +1966,11 @@
 
     <!-- Quote Calculator Modal -->
     <div class="modal" id="quoteCalculatorModal">
+        <div class="quote-map-panel" id="quoteMapPanel">
+            <h3>Route</h3>
+            <div id="quoteMapContainer"></div>
+        </div>
+
         <div class="modal-content">
             <div class="modal-header">
                 <h2>🧮 Quote Calculator</h2>
@@ -2094,6 +2144,7 @@
             document.querySelectorAll('.tab-btn').forEach((btn) => {
                 btn.classList.toggle('active', btn.dataset.tab === tab);
             });
+            if (tab === 'archived') archivedVisibleCount = ARCHIVED_PAGE_SIZE;
             renderLoads();
         }
 
@@ -2566,12 +2617,41 @@
             return Promise.all(ids.map((id) => db.collection('loads').doc(id).delete()));
         }
 
+        // merge:true, not a full overwrite - a record built by
+        // buildArchiveRecord() never carries pdfData (see below), so a
+        // plain .set() here would silently wipe out the inline PDF on any
+        // archived load saved before that split existed. Leaving whatever
+        // isn't in the written object alone is exactly what's needed for
+        // old and new records to coexist without a migration.
         function apiArchiveLoad(record) {
-            return db.collection('archivedLoads').doc(record.id).set(record);
+            return db.collection('archivedLoads').doc(record.id).set(record, { merge: true });
         }
 
         function apiDeleteArchivedLoad(id) {
             return db.collection('archivedLoads').doc(id).delete();
+        }
+
+        // The rate con PDF for an archived load lives in its own
+        // collection/doc, fetched only when someone actually opens it -
+        // keeps the archivedLoads sync itself light (a few hundred bytes
+        // per load) no matter how many loads carry a PDF, since that's
+        // the part that actually gets big (up to ~900KB base64 each).
+        function apiSaveArchivedLoadPdf(id, pdfData) {
+            return db.collection('archivedLoadPdfs').doc(id).set({ pdfData });
+        }
+
+        function apiDeleteArchivedLoadPdf(id) {
+            return db.collection('archivedLoadPdfs').doc(id).delete();
+        }
+
+        async function apiGetArchivedLoadPdf(id) {
+            const doc = await db.collection('archivedLoadPdfs').doc(id).get();
+            return doc.exists ? doc.data().pdfData : null;
+        }
+
+        async function apiArchiveLoadWithPdf(record, pdfData) {
+            await apiArchiveLoad(record);
+            if (pdfData) await apiSaveArchivedLoadPdf(record.id, pdfData);
         }
 
         // Common freight hubs, seeded so autocomplete is useful right away
@@ -2677,8 +2757,15 @@
 
             // A field near the bottom of a modal (Delivery, sitting right
             // above the form buttons) doesn't have room below it - open
-            // upward instead of covering Calculate/Save.
-            const spaceBelow = window.innerHeight - rect.bottom;
+            // upward instead of covering Calculate/Save. Measured against
+            // the modal's own bottom edge, not the browser window's - the
+            // modal is usually far shorter than the viewport, so a
+            // viewport-relative check almost never caught this even though
+            // the popup was still covering the button row right below the
+            // field.
+            const modalContent = input.closest('.modal-content');
+            const containerBottom = modalContent ? modalContent.getBoundingClientRect().bottom : window.innerHeight;
+            const spaceBelow = containerBottom - rect.bottom;
             if (spaceBelow < DROPDOWN_MENU_HEIGHT) {
                 box.style.top = 'auto';
                 box.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
@@ -2922,6 +3009,7 @@
                 currentQuoteMiles = null;
                 document.getElementById('quoteHistoryPanel').classList.remove('active');
                 document.getElementById('quoteHistoryList').innerHTML = '';
+                hideQuoteMap();
             } else if (modalId === 'pdfViewerModal') {
                 // Release the blob URL rather than leaking it.
                 document.getElementById('pdfViewerFrame').src = '';
@@ -3952,13 +4040,33 @@
             return URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
         }
 
-        function openPdfViewer(loadId, e) {
+        async function openPdfViewer(loadId, e) {
             if (e) e.stopPropagation();
             const load = loads.find(l => l.id === loadId) || archivedLoads.find(l => l.id === loadId);
-            if (!load || !load.pdfData) return;
+            if (!load || !(load.pdfData || load.hasPdf)) return;
+
+            let pdfData = load.pdfData || null;
+            if (!pdfData && load.hasPdf) {
+                // Archived after the PDF-splitting change - not inline,
+                // fetch it from its own doc. Open the modal right away
+                // with a loading state instead of waiting in silence.
+                document.getElementById('pdfViewerTitle').textContent = 'Loading…';
+                document.getElementById('pdfViewerFrame').src = '';
+                document.getElementById('pdfViewerModal').classList.add('active');
+                try {
+                    pdfData = await apiGetArchivedLoadPdf(loadId);
+                } catch (err) {
+                    console.error('Failed to load archived PDF:', err);
+                }
+                if (!pdfData) {
+                    document.getElementById('pdfViewerTitle').textContent = 'Could not load PDF';
+                    return;
+                }
+            }
+            if (!pdfData) return;
 
             if (currentPdfUrl) URL.revokeObjectURL(currentPdfUrl);
-            currentPdfUrl = base64ToBlobUrl(load.pdfData);
+            currentPdfUrl = base64ToBlobUrl(pdfData);
 
             document.getElementById('pdfViewerTitle').textContent =
                 'Rate Con ' + (load.rateConNumber || '') + (load.carrierName ? ' — ' + load.carrierName : '');
@@ -4118,7 +4226,10 @@
                 deliveryDate: load.deliveryDate || '',
                 carrierRate: rate,
                 pdfName: load.pdfName || '',
-                pdfData: load.pdfData || '',
+                // The actual PDF bytes are saved separately via
+                // apiArchiveLoadWithPdf() - this just flags that one
+                // exists, so the 📎 icon and PDF viewer know to fetch it.
+                hasPdf: !!load.pdfData,
                 archivedAt: new Date().toISOString()
             };
         }
@@ -4161,7 +4272,7 @@
             renderLoads();
 
             try {
-                await Promise.all(records.map(r => apiArchiveLoad(r)));
+                await Promise.all(records.map((r, i) => apiArchiveLoadWithPdf(r, target[i].pdfData)));
                 await apiDeleteLoads(ids);
             } catch (err) {
                 console.error('Failed to archive Invoice Received loads:', err);
@@ -4244,7 +4355,7 @@
             closeModal('archiveConfirmModal');
 
             try {
-                await apiArchiveLoad(record);
+                await apiArchiveLoadWithPdf(record, load.pdfData);
                 await apiDeleteLoad(load.id);
             } catch (err) {
                 console.error('Failed to archive load:', err);
@@ -4484,6 +4595,20 @@
         // Calculator (and a quick lookback) actually need: lane, carrier,
         // rate, and the rate con PDF. No stage nav, no drag handle - an
         // archived load doesn't move again.
+
+        // Rendered incrementally rather than all at once - the whole set
+        // still syncs live (it's cheap now that the PDF itself lives in
+        // its own collection), but a few hundred cards on one page isn't
+        // a great scroll even so. "Load More" just reveals further into
+        // the same already-loaded, already-sorted list.
+        const ARCHIVED_PAGE_SIZE = 50;
+        let archivedVisibleCount = ARCHIVED_PAGE_SIZE;
+
+        function loadMoreArchived() {
+            archivedVisibleCount += ARCHIVED_PAGE_SIZE;
+            renderLoads();
+        }
+
         function renderArchivedLoads(searchQuery) {
             const container = document.getElementById('loadsContainer');
             const statusEl = document.getElementById('searchStatus');
@@ -4515,7 +4640,10 @@
                 return;
             }
 
-            container.innerHTML = sorted.map(load => `
+            const visible = sorted.slice(0, archivedVisibleCount);
+            const remaining = sorted.length - visible.length;
+
+            const cardsHtml = visible.map(load => `
                 <div class="archived-card">
                     <div class="archived-field">
                         <div class="load-field-label">Carrier</div>
@@ -4534,7 +4662,7 @@
                         <div class="load-field-value">${typeof load.carrierRate === 'number' ? '$' + load.carrierRate.toLocaleString() : '—'}</div>
                     </div>
                     <div class="archived-pdf-slot">
-                        ${load.pdfData ? `<button class="load-pdf-link" onclick="openPdfViewer('${load.id}', event)" title="View rate con PDF">📎</button>` : ''}
+                        ${(load.pdfData || load.hasPdf) ? `<button class="load-pdf-link" onclick="openPdfViewer('${load.id}', event)" title="View rate con PDF">📎</button>` : ''}
                     </div>
                     <div class="load-card-menu">
                         <button class="menu-btn" onclick="toggleDropdown('${load.id}', event)">⋮</button>
@@ -4546,6 +4674,12 @@
                     </div>
                 </div>
             `).join('');
+
+            const loadMoreHtml = remaining > 0 ? `
+                <button class="btn-secondary archived-load-more-btn" onclick="loadMoreArchived()">Load 50 More (${remaining} remaining)</button>
+            ` : '';
+
+            container.innerHTML = cardsHtml + loadMoreHtml;
         }
 
         function openEditArchivedModal(loadId) {
@@ -4605,6 +4739,7 @@
 
             try {
                 await apiDeleteArchivedLoad(id);
+                await apiDeleteArchivedLoadPdf(id);
             } catch (err) {
                 console.error('Failed to delete archived load:', err);
                 if (removed) archivedLoads.splice(index, 0, removed);
@@ -4623,6 +4758,18 @@
             if (!archived) return;
             if (!confirm('Unarchive this load and put it back on the board as Invoice Received?')) return;
 
+            // Legacy records still carry the PDF inline; newer ones need it
+            // fetched back from its own collection before the restored
+            // `loads` doc (which does keep pdfData inline) can be built.
+            let pdfData = archived.pdfData || '';
+            if (!pdfData && archived.hasPdf) {
+                try {
+                    pdfData = await apiGetArchivedLoadPdf(id) || '';
+                } catch (err) {
+                    console.error('Failed to fetch archived PDF while unarchiving:', err);
+                }
+            }
+
             const restored = {
                 id: archived.id,
                 carrierName: archived.carrierName || '',
@@ -4636,7 +4783,7 @@
                 deliveryTime: '',
                 loadNotes: '',
                 pdfName: archived.pdfName || '',
-                pdfData: archived.pdfData || '',
+                pdfData,
                 carrierRate: typeof archived.carrierRate === 'number' ? archived.carrierRate : null,
                 status: 'invoice-received',
                 createdAt: new Date().toISOString(),
@@ -4650,6 +4797,7 @@
             try {
                 await apiCreateLoad(restored);
                 await apiDeleteArchivedLoad(id);
+                await apiDeleteArchivedLoadPdf(id);
             } catch (err) {
                 console.error('Failed to unarchive load:', err);
                 loads = loads.filter(l => l.id !== id);
@@ -4672,7 +4820,56 @@
             currentQuoteMiles = null;
             document.getElementById('quoteHistoryPanel').classList.remove('active');
             document.getElementById('quoteHistoryList').innerHTML = '';
+            hideQuoteMap();
             document.getElementById('quoteCalculatorModal').classList.add('active');
+        }
+
+        // ── Route map ────────────────────────────────────────────────
+        // A quick "where in the country is this" glance - especially
+        // useful for a lane between two cities you don't already know off
+        // the top of your head. Free tiles (OpenStreetMap via Leaflet), no
+        // API key. The map instance is created once and reused across
+        // calculations rather than torn down and rebuilt each time.
+        let quoteMap = null;
+        let quoteRouteLine = null;
+        let quoteMapMarkers = [];
+
+        function hideQuoteMap() {
+            document.getElementById('quoteMapPanel').classList.remove('active');
+        }
+
+        function showQuoteRoute(from, to) {
+            document.getElementById('quoteMapPanel').classList.add('active');
+
+            if (!quoteMap) {
+                quoteMap = L.map('quoteMapContainer');
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap contributors',
+                    maxZoom: 18
+                }).addTo(quoteMap);
+            }
+
+            quoteMapMarkers.forEach(marker => quoteMap.removeLayer(marker));
+            quoteMapMarkers = [];
+            if (quoteRouteLine) {
+                quoteMap.removeLayer(quoteRouteLine);
+                quoteRouteLine = null;
+            }
+
+            const fromLatLng = [from.lat, from.lon];
+            const toLatLng = [to.lat, to.lon];
+            quoteMapMarkers.push(L.marker(fromLatLng).addTo(quoteMap));
+            quoteMapMarkers.push(L.marker(toLatLng).addTo(quoteMap));
+            quoteRouteLine = L.polyline([fromLatLng, toLatLng], { color: '#2563eb', weight: 4 }).addTo(quoteMap);
+
+            // The panel was just switched from display:none to visible
+            // above - Leaflet needs a real, laid-out container size before
+            // it can compute tile positions correctly, so give the browser
+            // a tick to apply that before measuring.
+            setTimeout(() => {
+                quoteMap.invalidateSize();
+                quoteMap.fitBounds(quoteRouteLine.getBounds(), { padding: [30, 30] });
+            }, 0);
         }
 
         // Compact reference list of every archived load on the matched
@@ -4889,6 +5086,7 @@
                                 <div class="quote-result-value">${miles.toLocaleString()} mi${note}</div>
                             </div>
                         `;
+                        showQuoteRoute(from, to);
 
                         // Regional loads that never matched on exact city
                         // text still count as a fair comp - a load picked
@@ -4908,6 +5106,7 @@
                                 <div class="quote-result-value">City not found</div>
                             </div>
                         `;
+                        hideQuoteMap();
                     }
                 } catch (err) {
                     console.error('Geocoding failed:', err);
@@ -4917,6 +5116,7 @@
                             <div class="quote-result-value">Unavailable</div>
                         </div>
                     `;
+                    hideQuoteMap();
                 }
 
                 renderQuoteHistoryPanel(labeledMatches);
@@ -4968,7 +5168,7 @@
                                 <input type="number" id="quotePerMileRate" step="0.1" min="0" placeholder="e.g., 2.50" oninput="updatePerMileEstimate()">
                             </div>
                             <div class="quote-result-row quote-result-highlight">
-                                <div class="quote-result-label">Price at that rate</div>
+                                <div class="quote-result-label">Suggested Customer Price</div>
                                 <div class="quote-result-value" id="quotePerMileResult">—</div>
                             </div>
                         </div>

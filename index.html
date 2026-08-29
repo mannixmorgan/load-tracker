@@ -1005,6 +1005,17 @@
             flex-wrap: nowrap;
         }
 
+        /* Drag handle, ⋮ menu, and rate-con badge read as one unit and
+           don't need the same breathing room as the rest of the row -
+           grouped with a tighter gap so pickup/delivery get more of the
+           card's width. */
+        .load-card-lead {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
         /* Full width of the card, so long notes wrap onto multiple lines
            rather than fighting the fixed-width fields above for space. */
         .load-card-notes-row {
@@ -1063,9 +1074,11 @@
         }
 
         /* Fixed width (not shrinkable) so a long name always gets the room
-           it needs and pickup/delivery aren't the ones giving it up. */
+           it needs and pickup/delivery aren't the ones giving it up - sized
+           to what CARRIER_NAME_MAX_LEN actually trims to rather than
+           leaving a lot of dead space around a typical short/medium name. */
         .load-field.field-carrier {
-            flex: 0 0 250px;
+            flex: 0 0 170px;
         }
 
         /* Carrier name is pre-trimmed to whole words in JS to fit one line -
@@ -1096,7 +1109,7 @@
 
         .load-field.field-pickup,
         .load-field.field-delivery {
-            flex: 1 1 190px;
+            flex: 1 1 210px;
         }
 
         /* Same fix as the carrier name above - a crowded row can shrink
@@ -1304,6 +1317,90 @@
         .archived-load-more-btn {
             display: block;
             margin: 16px auto 0;
+        }
+
+        .bulk-import-content {
+            max-width: 920px;
+            width: 92vw;
+        }
+
+        .bulk-import-intro {
+            font-size: 13px;
+            font-weight: 600;
+            color: #777;
+            margin: 0 0 12px;
+        }
+
+        .bulk-import-status {
+            font-size: 13px;
+            font-weight: 700;
+            color: #666;
+            margin: 10px 0;
+        }
+
+        .bulk-import-review {
+            max-height: 400px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .bulk-import-row {
+            display: grid;
+            grid-template-columns: 110px 1fr 1fr 1fr 90px 28px;
+            gap: 8px;
+            align-items: center;
+            padding: 10px;
+            background: #f7f7f7;
+            border: 1px solid #eee;
+            border-radius: 8px;
+        }
+
+        .bulk-import-row.row-warning {
+            background: #FFF8EC;
+            border-color: #FFA726;
+        }
+
+        .bulk-import-row-filename {
+            grid-column: 1 / -1;
+            font-size: 11px;
+            font-weight: 700;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .bulk-import-row input {
+            width: 100%;
+            min-width: 0;
+            padding: 6px 8px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 13px;
+            font-family: inherit;
+        }
+
+        .bulk-import-row-remove {
+            background: none;
+            border: none;
+            color: #c0392b;
+            font-size: 20px;
+            font-weight: 700;
+            line-height: 1;
+            cursor: pointer;
+            justify-self: center;
+        }
+
+        .bulk-import-row-warn-text {
+            grid-column: 1 / -1;
+            font-size: 12px;
+            font-weight: 700;
+            color: #b26a00;
         }
 
         .field-archived-rate .load-field-value {
@@ -1703,6 +1800,7 @@
                 <button class="tab-btn" data-tab="archived" onclick="switchTab('archived')">Archived <span class="tab-count" id="tabCountArchived"></span></button>
                 <div class="board-controls">
                     <button class="tab-btn archive-all-btn" id="archiveAllBtn" onclick="archiveAllInvoiceReceived()" style="display: none;">📦 Archive All</button>
+                    <button class="tab-btn" id="bulkImportBtn" onclick="openBulkImportModal()" style="display: none;">📥 Bulk Import Past Loads</button>
                     <button class="tab-btn" id="wallboardBtn" onclick="toggleWallboardMode()" title="Full screen + auto scroll, for a TV or projector">⛶ Full Screen</button>
                     <button class="tab-btn" id="autoScrollBtn" onclick="toggleAutoScroll()">▶ Auto Scroll</button>
                     <select id="autoScrollSpeed" title="Auto scroll speed">
@@ -1961,6 +2059,27 @@
                     <button type="submit" class="btn-primary">Save</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Bulk Import Past Loads Modal -->
+    <div class="modal" id="bulkImportModal">
+        <div class="modal-content bulk-import-content">
+            <div class="modal-header">
+                <h2>📥 Bulk Import Past Loads</h2>
+                <button class="close-btn" onclick="closeBulkImportModal()">&times;</button>
+            </div>
+            <p class="bulk-import-intro">Pick as many rate con PDFs as you want (ctrl/cmd-click to select several) - each is read automatically and dropped in as a row below to check over before importing straight into the archive.</p>
+            <div class="pdf-upload-section">
+                <p>Click below to choose rate con PDFs</p>
+                <input type="file" id="bulkImportFileInput" accept=".pdf" multiple onchange="handleBulkImportFiles(event)">
+            </div>
+            <div class="bulk-import-status" id="bulkImportStatus"></div>
+            <div class="bulk-import-review" id="bulkImportReview"></div>
+            <div class="form-actions">
+                <button type="button" class="btn-secondary" onclick="closeBulkImportModal()">Cancel</button>
+                <button type="button" class="btn-primary" id="bulkImportConfirmBtn" onclick="confirmBulkImport()" disabled>Import Loads</button>
+            </div>
         </div>
     </div>
 
@@ -3001,6 +3120,11 @@
                 archivingLoadId = null;
             } else if (modalId === 'editArchivedModal') {
                 editingArchivedLoadId = null;
+            } else if (modalId === 'bulkImportModal') {
+                bulkImportRows = [];
+                document.getElementById('bulkImportFileInput').value = '';
+                document.getElementById('bulkImportStatus').textContent = '';
+                document.getElementById('bulkImportReview').innerHTML = '';
             } else if (modalId === 'quoteCalculatorModal') {
                 resetForm('quoteCalculatorForm');
                 const resultsEl = document.getElementById('quoteResults');
@@ -3033,7 +3157,7 @@
         // two - Quote Calculator (an easy lookup you don't want to redo)
         // and Edit Load (an in-progress edit). They only close via the
         // ×, Cancel/Close, Save, or Enter - not a stray click outside.
-        const BACKDROP_CLOSE_EXCLUDED = ['quoteCalculatorModal', 'editLoadModal'];
+        const BACKDROP_CLOSE_EXCLUDED = ['quoteCalculatorModal', 'editLoadModal', 'bulkImportModal'];
 
         window.onclick = function(event) {
             if (event.target.classList.contains('modal') && modalMouseDownTarget === event.target
@@ -3238,42 +3362,12 @@
             }
         }
 
-        function processPdfFile(file) {
-            // A file has been picked - reveal the detail fields (and swap
-            // the picker's bare Cancel button for the full Cancel/Create
-            // Load pair) regardless of how extraction turns out.
-            document.getElementById('pdfDetailsSection').classList.add('active');
-            document.getElementById('pdfPickerActions').style.display = 'none';
-
-            const statusDiv = document.getElementById('extractionStatus');
-            statusDiv.className = 'extraction-status';
-            statusDiv.textContent = 'Reading PDF…';
-            statusDiv.style.display = 'block';
-
-            return new Promise((resolve) => {
-                const reader = new FileReader();
-
-                reader.onload = async function(e) {
-                try {
-                    // Keep the original file so it can be attached to the load
-                    // and reopened from the board later.
-                    if (e.target.result.byteLength <= MAX_ATTACHMENT_BYTES) {
-                        pendingPdfAttachment = {
-                            name: file.name,
-                            data: arrayBufferToBase64(e.target.result)
-                        };
-                    } else {
-                        pendingPdfAttachment = null;
-                        console.warn('Rate con too large to attach:', e.target.result.byteLength, 'bytes');
-                    }
-
-                    const pdf = await pdfjsLib.getDocument(e.target.result).promise;
-                    const page = await pdf.getPage(1);
-                    const textContent = await page.getTextContent();
-                    const text = textContent.items.map(item => item.str).join(' ');
-                    console.log('RAW PDF TEXT (for debugging extraction):', text);
-
-
+        // Runs the full rate-con extraction pipeline against already-
+        // extracted PDF text and returns the parsed fields, without touching
+        // any DOM - shared by the single-file Add Load picker and the
+        // Archived tab's bulk import, which both need the same parsing but
+        // apply the result differently (one form vs. many review rows).
+        function extractRateConFields(text) {
                     let carrierName = '';
                     let carrierPhone = '';
                     let rateConNumber = '';
@@ -3814,6 +3908,51 @@
                     let deliveryTime = findLabeledTime([/Delivery\s*Time[:\s]*/i]) || findAppointmentTime(deliveryNoteZone) || '';
 
                     carrierRate = extractCarrierRate(text);
+            return {
+                carrierName, carrierPhone, rateConNumber, pickupCity, deliveryCity,
+                pickupDate, deliveryDate, pickupTime, deliveryTime, carrierRate
+            };
+        }
+
+        function processPdfFile(file) {
+            // A file has been picked - reveal the detail fields (and swap
+            // the picker's bare Cancel button for the full Cancel/Create
+            // Load pair) regardless of how extraction turns out.
+            document.getElementById('pdfDetailsSection').classList.add('active');
+            document.getElementById('pdfPickerActions').style.display = 'none';
+
+            const statusDiv = document.getElementById('extractionStatus');
+            statusDiv.className = 'extraction-status';
+            statusDiv.textContent = 'Reading PDF…';
+            statusDiv.style.display = 'block';
+
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+
+                reader.onload = async function(e) {
+                try {
+                    // Keep the original file so it can be attached to the load
+                    // and reopened from the board later.
+                    if (e.target.result.byteLength <= MAX_ATTACHMENT_BYTES) {
+                        pendingPdfAttachment = {
+                            name: file.name,
+                            data: arrayBufferToBase64(e.target.result)
+                        };
+                    } else {
+                        pendingPdfAttachment = null;
+                        console.warn('Rate con too large to attach:', e.target.result.byteLength, 'bytes');
+                    }
+
+                    const pdf = await pdfjsLib.getDocument(e.target.result).promise;
+                    const page = await pdf.getPage(1);
+                    const textContent = await page.getTextContent();
+                    const text = textContent.items.map(item => item.str).join(' ');
+                    console.log('RAW PDF TEXT (for debugging extraction):', text);
+
+
+                    const _extracted = extractRateConFields(text);
+                    const { carrierName, carrierPhone, rateConNumber, pickupCity, deliveryCity,
+                        pickupDate, deliveryDate, pickupTime, deliveryTime, carrierRate } = _extracted;
 
                     // Fill in the fields
                     if (carrierName) document.getElementById('pdfCarrierName').value = carrierName;
@@ -4431,6 +4570,7 @@
             document.getElementById('tabCountPodReceived').textContent = podReceivedCount ? `(${podReceivedCount})` : '';
             document.getElementById('tabCountInvoiceReceived').textContent = invoiceReceivedCount ? `(${invoiceReceivedCount})` : '';
             document.getElementById('tabCountArchived').textContent = archivedLoads.length ? `(${archivedLoads.length})` : '';
+            document.getElementById('bulkImportBtn').style.display = currentTab === 'archived' ? '' : 'none';
 
             if (currentTab === 'archived') {
                 renderArchivedLoads(searchQuery);
@@ -4491,23 +4631,25 @@
                 <div class="load-card ${load.status}${load.issueNote ? ' has-issue' : ''}" data-load-id="${load.id}">
                     <div class="load-card-collapsed" onclick="toggleCardExpand('${load.id}', event)">
                       <div class="load-card-main-row">
-                        <div class="drag-handle" title="Drag to reorder" onclick="event.stopPropagation()" onpointerdown="handleHandlePointerDown(event, '${load.id}')">⠿</div>
-                        <div class="load-card-menu">
-                            <button class="menu-btn" onclick="toggleDropdown('${load.id}', event)">⋮</button>
-                            <div class="dropdown-menu" data-menu="${load.id}">
-                                <button onclick="openEditModal('${load.id}')">Edit</button>
-                                <button onclick="openNotesModal('${load.id}')">${load.loadNotes ? '📝 Edit Notes' : '📝 Add Notes'}</button>
-                                <button onclick="openIssueModal('${load.id}')">${load.issueNote ? '⚠ Edit Problem' : '⚠ Flag Problem'}</button>
-                                ${load.issueNote ? `<button onclick="clearIssue('${load.id}')">✓ Clear Problem</button>` : ''}
-                                <button class="delete" onclick="deleteLoad('${load.id}')">Delete</button>
-                            </div>
-                        </div>
-                        <div class="load-rc-group">
-                            <div class="load-rc-row">
-                                <div class="load-field field-rate-con">
-                                    <div class="load-field-value">${escapeHtml(load.rateConNumber)}</div>
+                        <div class="load-card-lead">
+                            <div class="drag-handle" title="Drag to reorder" onclick="event.stopPropagation()" onpointerdown="handleHandlePointerDown(event, '${load.id}')">⠿</div>
+                            <div class="load-card-menu">
+                                <button class="menu-btn" onclick="toggleDropdown('${load.id}', event)">⋮</button>
+                                <div class="dropdown-menu" data-menu="${load.id}">
+                                    <button onclick="openEditModal('${load.id}')">Edit</button>
+                                    <button onclick="openNotesModal('${load.id}')">${load.loadNotes ? '📝 Edit Notes' : '📝 Add Notes'}</button>
+                                    <button onclick="openIssueModal('${load.id}')">${load.issueNote ? '⚠ Edit Problem' : '⚠ Flag Problem'}</button>
+                                    ${load.issueNote ? `<button onclick="clearIssue('${load.id}')">✓ Clear Problem</button>` : ''}
+                                    <button class="delete" onclick="deleteLoad('${load.id}')">Delete</button>
                                 </div>
-                                ${load.pdfData ? `<button class="load-pdf-link" onclick="openPdfViewer('${load.id}', event)" title="View rate con PDF">📎</button>` : ''}
+                            </div>
+                            <div class="load-rc-group">
+                                <div class="load-rc-row">
+                                    <div class="load-field field-rate-con">
+                                        <div class="load-field-value">${escapeHtml(load.rateConNumber)}</div>
+                                    </div>
+                                    ${load.pdfData ? `<button class="load-pdf-link" onclick="openPdfViewer('${load.id}', event)" title="View rate con PDF">📎</button>` : ''}
+                                </div>
                             </div>
                         </div>
                         <div class="load-field field-carrier">
@@ -4680,6 +4822,218 @@
             ` : '';
 
             container.innerHTML = cardsHtml + loadMoreHtml;
+        }
+
+        // ── Bulk-importing past loads straight into the archive ─────────
+        // For back-filling history that never went through the board -
+        // select a batch of old rate cons, each gets read with the same
+        // extraction as a fresh Add Load, then the reviewed rows are saved
+        // straight to archivedLoads (skipping the active board entirely)
+        // so they count toward Quote Calculator history.
+        let bulkImportRows = [];
+        let bulkImportSeq = 0;
+
+        function openBulkImportModal() {
+            bulkImportRows = [];
+            document.getElementById('bulkImportFileInput').value = '';
+            document.getElementById('bulkImportStatus').textContent = '';
+            renderBulkImportReview();
+            document.getElementById('bulkImportModal').classList.add('active');
+        }
+
+        function closeBulkImportModal() {
+            closeModal('bulkImportModal');
+        }
+
+        async function handleBulkImportFiles(event) {
+            const files = Array.from(event.target.files || []);
+            if (!files.length) return;
+
+            const statusDiv = document.getElementById('bulkImportStatus');
+            let done = 0;
+            const announce = () => {
+                statusDiv.textContent = `Reading rate cons… (${done}/${files.length})`;
+            };
+            announce();
+
+            for (const file of files) {
+                try {
+                    bulkImportRows.push(await extractBulkImportRow(file));
+                } catch (err) {
+                    console.error('Bulk import: failed to read', file.name, err);
+                    bulkImportRows.push({
+                        rowId: ++bulkImportSeq,
+                        fileName: file.name,
+                        carrierName: '', rateConNumber: '', pickupCity: '', pickupDate: '',
+                        deliveryCity: '', deliveryDate: '', carrierRate: '',
+                        pdfName: '', pdfData: ''
+                    });
+                }
+                done++;
+                announce();
+            }
+
+            statusDiv.textContent = `${bulkImportRows.length} load${bulkImportRows.length === 1 ? '' : 's'} ready to review below.`;
+            event.target.value = '';
+            renderBulkImportReview();
+        }
+
+        function extractBulkImportRow(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = async function(e) {
+                    try {
+                        let pdfName = '', pdfData = '';
+                        if (e.target.result.byteLength <= MAX_ATTACHMENT_BYTES) {
+                            pdfName = file.name;
+                            pdfData = arrayBufferToBase64(e.target.result);
+                        }
+                        const pdf = await pdfjsLib.getDocument(e.target.result).promise;
+                        const page = await pdf.getPage(1);
+                        const textContent = await page.getTextContent();
+                        const text = textContent.items.map(item => item.str).join(' ');
+                        const fields = extractRateConFields(text);
+                        resolve({
+                            rowId: ++bulkImportSeq,
+                            fileName: file.name,
+                            carrierName: fields.carrierName || '',
+                            rateConNumber: fields.rateConNumber || '',
+                            pickupCity: fields.pickupCity || '',
+                            pickupDate: fields.pickupDate || '',
+                            deliveryCity: fields.deliveryCity || '',
+                            deliveryDate: fields.deliveryDate || '',
+                            carrierRate: typeof fields.carrierRate === 'number' ? fields.carrierRate : '',
+                            pdfName, pdfData
+                        });
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+                reader.onerror = reject;
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        function updateBulkImportField(rowId, field, value) {
+            const row = bulkImportRows.find(r => r.rowId === rowId);
+            if (!row) return;
+            row[field] = value;
+            // Just re-check validity/duplicate state without a full
+            // re-render, so the input the user is actively typing in never
+            // loses focus or cursor position mid-keystroke.
+            const rowEl = document.querySelector(`.bulk-import-row[data-row-id="${rowId}"]`);
+            if (rowEl) {
+                const isDup = bulkImportIsDuplicate(row);
+                const valid = bulkImportRowIsValid(row);
+                rowEl.classList.toggle('row-warning', !valid || isDup);
+                const warnEl = rowEl.querySelector('.bulk-import-row-warn-text');
+                const warnText = !valid
+                    ? '⚠ Needs Rate Con #, Pickup, and Delivery to import'
+                    : (isDup ? '⚠ Rate Con # already in Archived' : '');
+                if (warnEl) warnEl.textContent = warnText;
+                rowEl.classList.toggle('has-warning-text', !!warnText);
+            }
+            updateBulkImportConfirmState();
+        }
+
+        function removeBulkImportRow(rowId) {
+            bulkImportRows = bulkImportRows.filter(r => r.rowId !== rowId);
+            renderBulkImportReview();
+        }
+
+        function bulkImportRowIsValid(row) {
+            return !!(row.rateConNumber.trim() && row.pickupCity.trim() && row.deliveryCity.trim());
+        }
+
+        function bulkImportIsDuplicate(row) {
+            if (!row.rateConNumber.trim()) return false;
+            const normalized = row.rateConNumber.trim().toLowerCase();
+            return archivedLoads.some(l => String(l.rateConNumber || '').trim().toLowerCase() === normalized)
+                || loads.some(l => String(l.rateConNumber || '').trim().toLowerCase() === normalized);
+        }
+
+        function updateBulkImportConfirmState() {
+            const validCount = bulkImportRows.filter(bulkImportRowIsValid).length;
+            const btn = document.getElementById('bulkImportConfirmBtn');
+            btn.disabled = validCount === 0;
+            btn.textContent = validCount ? `Import ${validCount} Load${validCount === 1 ? '' : 's'}` : 'Import Loads';
+        }
+
+        function renderBulkImportReview() {
+            const container = document.getElementById('bulkImportReview');
+            if (!bulkImportRows.length) {
+                container.innerHTML = '';
+                updateBulkImportConfirmState();
+                return;
+            }
+
+            container.innerHTML = bulkImportRows.map(row => {
+                const isDup = bulkImportIsDuplicate(row);
+                const valid = bulkImportRowIsValid(row);
+                const warnClass = (!valid || isDup) ? ' row-warning' : '';
+                const warnText = !valid
+                    ? '⚠ Needs Rate Con #, Pickup, and Delivery to import'
+                    : (isDup ? '⚠ Rate Con # already in Archived' : '');
+                return `
+                    <div class="bulk-import-row${warnClass}" data-row-id="${row.rowId}">
+                        <div class="bulk-import-row-filename">${escapeHtml(row.fileName)}</div>
+                        <input type="text" placeholder="Rate Con #" value="${escapeHtml(row.rateConNumber)}" oninput="updateBulkImportField(${row.rowId}, 'rateConNumber', this.value)">
+                        <input type="text" placeholder="Carrier" value="${escapeHtml(row.carrierName)}" oninput="updateBulkImportField(${row.rowId}, 'carrierName', this.value)">
+                        <input type="text" placeholder="Pickup City, ST" value="${escapeHtml(row.pickupCity)}" oninput="updateBulkImportField(${row.rowId}, 'pickupCity', this.value)">
+                        <input type="text" placeholder="Delivery City, ST" value="${escapeHtml(row.deliveryCity)}" oninput="updateBulkImportField(${row.rowId}, 'deliveryCity', this.value)">
+                        <input type="number" min="0" step="1" placeholder="Rate $" value="${row.carrierRate}" oninput="updateBulkImportField(${row.rowId}, 'carrierRate', this.value)">
+                        <button type="button" class="bulk-import-row-remove" title="Remove" onclick="removeBulkImportRow(${row.rowId})">&times;</button>
+                        ${warnText ? `<div class="bulk-import-row-warn-text">${warnText}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+
+            updateBulkImportConfirmState();
+        }
+
+        async function confirmBulkImport() {
+            const validRows = bulkImportRows.filter(bulkImportRowIsValid);
+            if (!validRows.length) return;
+
+            const btn = document.getElementById('bulkImportConfirmBtn');
+            btn.disabled = true;
+            btn.textContent = 'Importing…';
+
+            const records = validRows.map(row => {
+                const parsedRate = parseFloat(row.carrierRate);
+                // Backfilled loads should land in the archive list where
+                // they actually happened, not at the top just because
+                // they were imported today - falls back to "now" only if
+                // the PDF had no date to extract.
+                const dateForSort = row.deliveryDate || row.pickupDate || '';
+                return {
+                    id: generateId(),
+                    carrierName: row.carrierName.trim(),
+                    rateConNumber: row.rateConNumber.trim(),
+                    pickupCity: row.pickupCity.trim(),
+                    deliveryCity: row.deliveryCity.trim(),
+                    pickupDate: row.pickupDate || '',
+                    deliveryDate: row.deliveryDate || '',
+                    carrierRate: row.carrierRate !== '' && !isNaN(parsedRate) ? parsedRate : null,
+                    pdfName: row.pdfName || '',
+                    hasPdf: !!row.pdfData,
+                    archivedAt: dateForSort ? new Date(dateForSort).toISOString() : new Date().toISOString()
+                };
+            });
+
+            archivedLoads = [...records, ...archivedLoads];
+            renderLoads();
+            closeBulkImportModal();
+
+            try {
+                await Promise.all(records.map((r, i) => apiArchiveLoadWithPdf(r, validRows[i].pdfData)));
+            } catch (err) {
+                console.error('Bulk import failed to save:', err);
+                const ids = records.map(r => r.id);
+                archivedLoads = archivedLoads.filter(l => !ids.includes(l.id));
+                renderLoads();
+                alert('Could not save the imported loads - check your connection and try again.');
+            }
         }
 
         function openEditArchivedModal(loadId) {
@@ -4924,6 +5278,19 @@
             return Math.round(value / 50) * 50;
         }
 
+        // Customer price is always the carrier rate marked up 10-15%, but
+        // on a cheap load that can round down to a razor-thin (or even $0)
+        // spread once both ends land on the nearest $50 - there's always
+        // at least $100 of room in the range no matter how small the load
+        // is, widening the top end (never the bottom, which stays the
+        // true 10% markup) to make up the difference.
+        function computeCustomerPriceRange(carrierRate) {
+            const low = roundToNearest50(carrierRate * 1.10);
+            let high = roundToNearest50(carrierRate * 1.15);
+            if (high - low < 100) high = low + 100;
+            return { low, high };
+        }
+
         // Geocoding results are cached (keyed by normalized city text) in
         // memory and in localStorage - the same handful of regional cities
         // come up over and over, so repeat lookups are instant after the
@@ -5042,10 +5409,9 @@
             }
             // The $/mile typed in is the carrier cost, same as everywhere
             // else in the app - the customer price is that marked up
-            // 10-20%, not the raw $/mile figure itself.
+            // 10-15%, not the raw $/mile figure itself.
             const rawCarrierRate = currentQuoteMiles * rate;
-            const low = roundToNearest50(rawCarrierRate * 1.10);
-            const high = roundToNearest50(rawCarrierRate * 1.20);
+            const { low, high } = computeCustomerPriceRange(rawCarrierRate);
             carrierEl.textContent = `$${roundToNearest50(rawCarrierRate).toLocaleString()}`;
             priceEl.textContent = `$${low.toLocaleString()} - $${high.toLocaleString()}`;
         }
@@ -5135,11 +5501,10 @@
                         ? ` (avg of ${allMatchedLoads.length} loads${includesNearby ? ` within ${NEARBY_RADIUS_MILES}mi` : ''})`
                         : (includesNearby ? ` (within ${NEARBY_RADIUS_MILES}mi)` : '');
 
-                    // Always a range (10-20% over the carrier rate), same
+                    // Always a range (10-15% over the carrier rate), same
                     // as the manual $/mile estimate below - never a single
                     // exact number.
-                    const low = roundToNearest50(avgRate * 1.10);
-                    const high = roundToNearest50(avgRate * 1.20);
+                    const { low, high } = computeCustomerPriceRange(avgRate);
 
                     priceHtml = `
                         <div class="quote-result-row">
@@ -5220,7 +5585,7 @@
         // Carrier name as shown on the board - kept to one clean line. The
         // full name (LLC/Inc included) is still what's stored and what shows
         // in the Edit form; this only affects the card display.
-        const CARRIER_NAME_MAX_LEN = 35;
+        const CARRIER_NAME_MAX_LEN = 20;
 
         function formatCarrierNameDisplay(rawName) {
             let name = String(rawName || '').trim();

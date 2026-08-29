@@ -9,6 +9,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore-compat.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         * {
             margin: 0;
@@ -720,6 +722,44 @@
             overflow-y: auto;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
             padding: 18px;
+        }
+
+        /* Route preview, on the opposite side of the modal from the past-
+           loads panel - a quick "where in the country is this" glance,
+           especially useful for an unfamiliar city. */
+        .quote-map-panel {
+            display: none;
+            background: white;
+            border-radius: 12px;
+            width: 320px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            padding: 18px;
+        }
+
+        .quote-map-panel.active {
+            display: block;
+        }
+
+        .quote-map-panel h3 {
+            font-size: 13px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        #quoteMapContainer {
+            height: 280px;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #eef2f5;
+        }
+
+        /* Leaflet's default blue is fine, but drawn a touch thicker so the
+           route reads clearly at a glance. */
+        .quote-route-line {
+            stroke: #2563eb;
         }
 
         .quote-history-panel.active {
@@ -1921,6 +1961,11 @@
 
     <!-- Quote Calculator Modal -->
     <div class="modal" id="quoteCalculatorModal">
+        <div class="quote-map-panel" id="quoteMapPanel">
+            <h3>Route</h3>
+            <div id="quoteMapContainer"></div>
+        </div>
+
         <div class="modal-content">
             <div class="modal-header">
                 <h2>🧮 Quote Calculator</h2>
@@ -2677,8 +2722,15 @@
 
             // A field near the bottom of a modal (Delivery, sitting right
             // above the form buttons) doesn't have room below it - open
-            // upward instead of covering Calculate/Save.
-            const spaceBelow = window.innerHeight - rect.bottom;
+            // upward instead of covering Calculate/Save. Measured against
+            // the modal's own bottom edge, not the browser window's - the
+            // modal is usually far shorter than the viewport, so a
+            // viewport-relative check almost never caught this even though
+            // the popup was still covering the button row right below the
+            // field.
+            const modalContent = input.closest('.modal-content');
+            const containerBottom = modalContent ? modalContent.getBoundingClientRect().bottom : window.innerHeight;
+            const spaceBelow = containerBottom - rect.bottom;
             if (spaceBelow < DROPDOWN_MENU_HEIGHT) {
                 box.style.top = 'auto';
                 box.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
@@ -2922,6 +2974,7 @@
                 currentQuoteMiles = null;
                 document.getElementById('quoteHistoryPanel').classList.remove('active');
                 document.getElementById('quoteHistoryList').innerHTML = '';
+                hideQuoteMap();
             } else if (modalId === 'pdfViewerModal') {
                 // Release the blob URL rather than leaking it.
                 document.getElementById('pdfViewerFrame').src = '';
@@ -4672,7 +4725,56 @@
             currentQuoteMiles = null;
             document.getElementById('quoteHistoryPanel').classList.remove('active');
             document.getElementById('quoteHistoryList').innerHTML = '';
+            hideQuoteMap();
             document.getElementById('quoteCalculatorModal').classList.add('active');
+        }
+
+        // ── Route map ────────────────────────────────────────────────
+        // A quick "where in the country is this" glance - especially
+        // useful for a lane between two cities you don't already know off
+        // the top of your head. Free tiles (OpenStreetMap via Leaflet), no
+        // API key. The map instance is created once and reused across
+        // calculations rather than torn down and rebuilt each time.
+        let quoteMap = null;
+        let quoteRouteLine = null;
+        let quoteMapMarkers = [];
+
+        function hideQuoteMap() {
+            document.getElementById('quoteMapPanel').classList.remove('active');
+        }
+
+        function showQuoteRoute(from, to) {
+            document.getElementById('quoteMapPanel').classList.add('active');
+
+            if (!quoteMap) {
+                quoteMap = L.map('quoteMapContainer');
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap contributors',
+                    maxZoom: 18
+                }).addTo(quoteMap);
+            }
+
+            quoteMapMarkers.forEach(marker => quoteMap.removeLayer(marker));
+            quoteMapMarkers = [];
+            if (quoteRouteLine) {
+                quoteMap.removeLayer(quoteRouteLine);
+                quoteRouteLine = null;
+            }
+
+            const fromLatLng = [from.lat, from.lon];
+            const toLatLng = [to.lat, to.lon];
+            quoteMapMarkers.push(L.marker(fromLatLng).addTo(quoteMap));
+            quoteMapMarkers.push(L.marker(toLatLng).addTo(quoteMap));
+            quoteRouteLine = L.polyline([fromLatLng, toLatLng], { color: '#2563eb', weight: 4 }).addTo(quoteMap);
+
+            // The panel was just switched from display:none to visible
+            // above - Leaflet needs a real, laid-out container size before
+            // it can compute tile positions correctly, so give the browser
+            // a tick to apply that before measuring.
+            setTimeout(() => {
+                quoteMap.invalidateSize();
+                quoteMap.fitBounds(quoteRouteLine.getBounds(), { padding: [30, 30] });
+            }, 0);
         }
 
         // Compact reference list of every archived load on the matched
@@ -4889,6 +4991,7 @@
                                 <div class="quote-result-value">${miles.toLocaleString()} mi${note}</div>
                             </div>
                         `;
+                        showQuoteRoute(from, to);
 
                         // Regional loads that never matched on exact city
                         // text still count as a fair comp - a load picked
@@ -4908,6 +5011,7 @@
                                 <div class="quote-result-value">City not found</div>
                             </div>
                         `;
+                        hideQuoteMap();
                     }
                 } catch (err) {
                     console.error('Geocoding failed:', err);
@@ -4917,6 +5021,7 @@
                             <div class="quote-result-value">Unavailable</div>
                         </div>
                     `;
+                    hideQuoteMap();
                 }
 
                 renderQuoteHistoryPanel(labeledMatches);
@@ -4968,7 +5073,7 @@
                                 <input type="number" id="quotePerMileRate" step="0.1" min="0" placeholder="e.g., 2.50" oninput="updatePerMileEstimate()">
                             </div>
                             <div class="quote-result-row quote-result-highlight">
-                                <div class="quote-result-label">Price at that rate</div>
+                                <div class="quote-result-label">Suggested Customer Price</div>
                                 <div class="quote-result-value" id="quotePerMileResult">—</div>
                             </div>
                         </div>

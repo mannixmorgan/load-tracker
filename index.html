@@ -5036,14 +5036,23 @@
         // to base a suggested price on.
         function updatePerMileEstimate() {
             const input = document.getElementById('quotePerMileRate');
-            const resultEl = document.getElementById('quotePerMileResult');
-            if (!input || !resultEl) return;
+            const carrierEl = document.getElementById('quotePerMileCarrierResult');
+            const priceEl = document.getElementById('quotePerMileResult');
+            if (!input || !carrierEl || !priceEl) return;
             const rate = parseFloat(input.value);
             if (currentQuoteMiles === null || isNaN(rate) || rate <= 0) {
-                resultEl.textContent = '—';
+                carrierEl.textContent = '—';
+                priceEl.textContent = '—';
                 return;
             }
-            resultEl.textContent = `$${roundToNearest50(currentQuoteMiles * rate).toLocaleString()}`;
+            // The $/mile typed in is the carrier cost, same as everywhere
+            // else in the app - the customer price is that marked up
+            // 10-20%, not the raw $/mile figure itself.
+            const rawCarrierRate = currentQuoteMiles * rate;
+            const low = roundToNearest50(rawCarrierRate * 1.10);
+            const high = roundToNearest50(rawCarrierRate * 1.20);
+            carrierEl.textContent = `$${roundToNearest50(rawCarrierRate).toLocaleString()}`;
+            priceEl.textContent = `$${low.toLocaleString()} - $${high.toLocaleString()}`;
         }
 
         async function calculateQuote(e) {
@@ -5164,8 +5173,12 @@
                     perMileHtml = `
                         <div class="quote-permile-section">
                             <div class="form-group">
-                                <label for="quotePerMileRate">Try a $/mile rate</label>
+                                <label for="quotePerMileRate">Try a $/mile carrier rate</label>
                                 <input type="number" id="quotePerMileRate" step="0.1" min="0" placeholder="e.g., 2.50" oninput="updatePerMileEstimate()">
+                            </div>
+                            <div class="quote-result-row">
+                                <div class="quote-result-label">Carrier Rate</div>
+                                <div class="quote-result-value" id="quotePerMileCarrierResult">—</div>
                             </div>
                             <div class="quote-result-row quote-result-highlight">
                                 <div class="quote-result-label">Suggested Customer Price</div>

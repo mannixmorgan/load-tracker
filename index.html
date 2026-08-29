@@ -4763,7 +4763,13 @@
                     .filter(Boolean).join(' ').toLowerCase();
                 return searchQuery.split(/\s+/).every(term => haystack.includes(term));
             });
-            const sorted = [...matches].sort((a, b) => (b.archivedAt || '').localeCompare(a.archivedAt || ''));
+            // Sorted by rate con # (same numeric-aware ordering as the
+            // main board) rather than archivedAt - bulk-imported past
+            // loads carry whatever date their PDF happened to have (or
+            // none at all), so RC# is the one ordering that stays
+            // consistent and predictable across both normal archiving
+            // and back-filled history.
+            const sorted = [...matches].sort(compareRateConDesc);
 
             if (!sorted.length) {
                 container.innerHTML = searchQuery ? `
@@ -5278,6 +5284,16 @@
             return Math.round(value / 50) * 50;
         }
 
+        // Customer price always rounds UP to the next $50 - rounding to
+        // the nearest $50 could round a markup down below the true 10-15%
+        // (and floating-point math on the raw rate, e.g. 2250 * 1.10
+        // landing a hair under 2475, could round a boundary case down a
+        // full $50 step further still) - either way the customer should
+        // never be quoted less than the actual markup.
+        function roundUpToNearest50(value) {
+            return Math.ceil(value / 50) * 50;
+        }
+
         // Customer price is always the carrier rate marked up 10-15%, but
         // on a cheap load that can round down to a razor-thin (or even $0)
         // spread once both ends land on the nearest $50 - there's always
@@ -5285,8 +5301,8 @@
         // is, widening the top end (never the bottom, which stays the
         // true 10% markup) to make up the difference.
         function computeCustomerPriceRange(carrierRate) {
-            const low = roundToNearest50(carrierRate * 1.10);
-            let high = roundToNearest50(carrierRate * 1.15);
+            const low = roundUpToNearest50(carrierRate * 1.10);
+            let high = roundUpToNearest50(carrierRate * 1.15);
             if (high - low < 100) high = low + 100;
             return { low, high };
         }

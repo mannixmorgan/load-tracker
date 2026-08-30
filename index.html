@@ -712,11 +712,24 @@
         .quote-permile-section {
             margin-top: 14px;
             padding-top: 14px;
-            border-top: 1px dashed #ddd;
+            border-top: 1px dashed #ccc;
         }
 
         .quote-permile-section .form-group {
             margin-bottom: 4px;
+        }
+
+        /* Marks the manual $/mile and reverse-rate boxes as a distinct
+           "you type it in" zone, separate from the historical-based
+           numbers above - the line alone read as just a spacer, not a
+           real division between two different kinds of number. */
+        .quote-section-label {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #999;
+            margin-bottom: 8px;
         }
 
         /* The "Past Loads On This Lane" side panel - deliberately much
@@ -775,30 +788,13 @@
             display: block;
         }
 
-        .quote-history-header {
-            margin-bottom: 12px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #f0f0f0;
-        }
-
-        .quote-history-header h3 {
+        .quote-history-panel h3 {
             font-size: 13px;
             font-weight: 700;
             color: #333;
-            margin-bottom: 6px;
-        }
-
-        /* Switches every rate below between the flat $ amount and $/mile -
-           full width since the panel itself is narrow (240px). */
-        .quote-history-header select {
-            width: 100%;
-            font-size: 11px;
-            font-weight: 600;
-            color: #555;
-            padding: 4px 6px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            background: white;
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
         }
 
         .quote-history-empty {
@@ -2204,13 +2200,7 @@
         </div>
 
         <div class="quote-history-panel" id="quoteHistoryPanel">
-            <div class="quote-history-header">
-                <h3>Past Loads On This Lane</h3>
-                <select id="quoteHistoryRateMode" onchange="renderQuoteHistoryPanel(lastLabeledMatches, lastHistoryHiddenCount)">
-                    <option value="total">Total $</option>
-                    <option value="perMile">$ / mile</option>
-                </select>
-            </div>
+            <h3>Past Loads On This Lane</h3>
             <div id="quoteHistoryList"></div>
         </div>
     </div>
@@ -3240,12 +3230,9 @@
                 resultsEl.innerHTML = '';
                 resultsEl.classList.remove('active');
                 currentQuoteMiles = null;
-                lastLabeledMatches = [];
-                lastHistoryHiddenCount = 0;
                 lastAllSortedMatches = [];
                 document.getElementById('quoteHistoryPanel').classList.remove('active');
                 document.getElementById('quoteHistoryList').innerHTML = '';
-                document.getElementById('quoteHistoryRateMode').value = 'total';
                 document.getElementById('allHistoryModal').classList.remove('active');
                 document.getElementById('allHistoryList').innerHTML = '';
                 hideQuoteMap();
@@ -5356,16 +5343,8 @@
         // "~N mi away" for a similar-lane match within NEARBY_RADIUS_MILES.
         // Only an "Exact match" shares the lane just calculated (same
         // pickup/delivery), so currentQuoteMiles is a real mileage for it.
-        // A nearby match is a genuinely different lane (pickup and/or
-        // delivery within NEARBY_RADIUS_MILES, not the same route), so its
-        // own length isn't known here - showing $/mile against
-        // currentQuoteMiles for those would just be wrong, not an
-        // estimate, so they fall back to "—" in that mode instead.
-        function formatQuoteHistoryRate(load, label, mode) {
-            if (typeof load.carrierRate !== 'number') return '—';
-            if (mode !== 'perMile') return '$' + load.carrierRate.toLocaleString();
-            if (label !== 'Exact match' || !currentQuoteMiles) return '—';
-            return '$' + (load.carrierRate / currentQuoteMiles).toFixed(2) + '/mi';
+        function formatQuoteHistoryRate(load) {
+            return typeof load.carrierRate === 'number' ? '$' + load.carrierRate.toLocaleString() : '—';
         }
 
         // Exact-lane matches always sort ahead of nearby ones, and within
@@ -5390,16 +5369,15 @@
         // "See All" can open a scrollable modal with everything else.
         const HISTORY_DISPLAY_LIMIT = 8;
 
-        let lastHistoryHiddenCount = 0;
         let lastAllSortedMatches = [];
 
-        function quoteHistoryRowHtml(load, label, mode) {
+        function quoteHistoryRowHtml(load, label) {
             return `
                 <div class="quote-history-item">
                     <div class="quote-history-lane">${escapeHtml(load.pickupCity || '?')} → ${escapeHtml(load.deliveryCity || '?')}</div>
                     <div class="quote-history-meta">
                         <div class="quote-history-carrier">${escapeHtml(load.carrierName || '—')}</div>
-                        <div class="quote-history-rate">${formatQuoteHistoryRate(load, label, mode)}</div>
+                        <div class="quote-history-rate">${formatQuoteHistoryRate(load)}</div>
                         ${(load.pdfData || load.hasPdf) ? `<button class="quote-history-pdf-link" onclick="openPdfViewer('${load.id}', event)" title="View rate con PDF">📎</button>` : ''}
                     </div>
                     <div class="quote-history-distance">${escapeHtml(label)}</div>
@@ -5408,39 +5386,27 @@
         }
 
         function renderQuoteHistoryPanel(labeledMatches, hiddenCount) {
-            lastLabeledMatches = labeledMatches;
-            lastHistoryHiddenCount = hiddenCount || 0;
+            const hidden = hiddenCount || 0;
             const panel = document.getElementById('quoteHistoryPanel');
             const listEl = document.getElementById('quoteHistoryList');
-            const mode = document.getElementById('quoteHistoryRateMode').value;
 
             if (!labeledMatches.length) {
                 listEl.innerHTML = '<p class="quote-history-empty">No past loads found on this lane yet.</p>';
             } else {
-                const totalCount = labeledMatches.length + lastHistoryHiddenCount;
-                listEl.innerHTML = labeledMatches.map(({ load, label }) => quoteHistoryRowHtml(load, label, mode)).join('')
-                    + (lastHistoryHiddenCount > 0
+                const totalCount = labeledMatches.length + hidden;
+                listEl.innerHTML = labeledMatches.map(({ load, label }) => quoteHistoryRowHtml(load, label)).join('')
+                    + (hidden > 0
                         ? `<button type="button" class="quote-history-more" onclick="openAllHistoryModal()">See All ${totalCount} Loads</button>`
                         : '');
             }
 
             panel.classList.add('active');
-            renderAllHistoryModalIfOpen();
         }
 
         function openAllHistoryModal() {
             const listEl = document.getElementById('allHistoryList');
-            const mode = document.getElementById('quoteHistoryRateMode').value;
-            listEl.innerHTML = lastAllSortedMatches.map(({ load, label }) => quoteHistoryRowHtml(load, label, mode)).join('');
+            listEl.innerHTML = lastAllSortedMatches.map(({ load, label }) => quoteHistoryRowHtml(load, label)).join('');
             document.getElementById('allHistoryModal').classList.add('active');
-        }
-
-        // Keeps the "See All" modal in sync if the Total $ / $ per mile
-        // dropdown is switched while it's still open, without needing its
-        // own separate control.
-        function renderAllHistoryModalIfOpen() {
-            const modal = document.getElementById('allHistoryModal');
-            if (modal.classList.contains('active')) openAllHistoryModal();
         }
 
         function closeAllHistoryModal() {
@@ -5594,11 +5560,6 @@
         // experimentation box can react live without another round trip.
         let currentQuoteMiles = null;
 
-        // The last set of history matches rendered, kept around so the
-        // "Total $ / $ per mile" dropdown can just re-render instead of
-        // re-running the whole search.
-        let lastLabeledMatches = [];
-
         // Recomputes the "price at that rate" line live as the $/mile
         // input changes - lets you play with different per-mile rates on
         // the spot, which matters most on a lane with no historical loads
@@ -5621,6 +5582,21 @@
             const { low, high } = computeCustomerPriceRange(rawCarrierRate);
             carrierEl.textContent = `$${roundToNearest50(rawCarrierRate).toLocaleString()}`;
             priceEl.textContent = `$${low.toLocaleString()} - $${high.toLocaleString()}`;
+        }
+
+        // The reverse of the box above - type a flat carrier rate you
+        // already know (e.g. one you saw in the Past Loads panel) and see
+        // what it works out to per mile, live as you type.
+        function updateReverseRateEstimate() {
+            const input = document.getElementById('quoteReverseRate');
+            const resultEl = document.getElementById('quoteReverseRateResult');
+            if (!input || !resultEl) return;
+            const rate = parseFloat(input.value);
+            if (currentQuoteMiles === null || isNaN(rate) || rate <= 0) {
+                resultEl.textContent = '—';
+                return;
+            }
+            resultEl.textContent = `$${(rate / currentQuoteMiles).toFixed(2)}/mi`;
         }
 
         async function calculateQuote(e) {
@@ -5705,27 +5681,51 @@
                 const includesNearby = labeledMatches.some(m => m.label !== 'Exact match');
                 let priceHtml;
                 if (allMatchedLoads.length) {
-                    const rates = allMatchedLoads.map(load => load.carrierRate || 0);
-                    const avgRate = rates.reduce((sum, r) => sum + r, 0) / rates.length;
                     const countLabel = allMatchedLoads.length > 1
-                        ? ` (avg of ${allMatchedLoads.length} loads${includesNearby ? ` within ${NEARBY_RADIUS_MILES}mi` : ''})`
+                        ? ` (${allMatchedLoads.length} loads${includesNearby ? ` within ${NEARBY_RADIUS_MILES}mi` : ''})`
                         : (includesNearby ? ` (within ${NEARBY_RADIUS_MILES}mi)` : '');
 
-                    // Always a range (10-15% over the carrier rate), same
-                    // as the manual $/mile estimate below - never a single
-                    // exact number.
-                    const { low, high } = computeCustomerPriceRange(avgRate);
+                    // Loads archived before rate extraction existed (or
+                    // where it missed) may have no cached carrierRate -
+                    // excluded here rather than counted as a $0, which
+                    // would wreck a lowest-we-paid floor.
+                    const validRates = allMatchedLoads.map(load => load.carrierRate).filter(r => typeof r === 'number');
+                    if (validRates.length) {
+                        const minRate = Math.min(...validRates);
+                        const maxRate = Math.max(...validRates);
+                        const carrierRateText = minRate === maxRate
+                            ? `$${minRate.toLocaleString()}`
+                            : `$${minRate.toLocaleString()} - $${maxRate.toLocaleString()}`;
 
-                    priceHtml = `
-                        <div class="quote-result-row">
-                            <div class="quote-result-label">Historical Carrier Rate${countLabel}</div>
-                            <div class="quote-result-value">$${Math.round(avgRate).toLocaleString()}</div>
-                        </div>
-                        <div class="quote-result-row quote-result-highlight">
-                            <div class="quote-result-label">Suggested Customer Price</div>
-                            <div class="quote-result-value">$${low.toLocaleString()} - $${high.toLocaleString()}</div>
-                        </div>
-                    `;
+                        // Suggested Customer Price spans the same lowest-
+                        // to-highest spread as the carrier rate above it,
+                        // rather than a single average - the low end is
+                        // the 10% markup on the cheapest we've actually
+                        // paid, the high end is the 15% markup on the
+                        // most, so the whole range reflects the real
+                        // spread of what this lane has gone for.
+                        const low = computeCustomerPriceRange(minRate).low;
+                        const high = computeCustomerPriceRange(maxRate).high;
+
+                        priceHtml = `
+                            <div class="quote-result-row">
+                                <div class="quote-result-label">Historical Carrier Rate${countLabel}</div>
+                                <div class="quote-result-value">${carrierRateText}</div>
+                            </div>
+                            <div class="quote-result-row quote-result-highlight">
+                                <div class="quote-result-label">Suggested Customer Price</div>
+                                <div class="quote-result-value">$${low.toLocaleString()} - $${high.toLocaleString()}</div>
+                            </div>
+                        `;
+                    } else {
+                        priceHtml = `
+                            <div class="quote-result-row">
+                                <div class="quote-result-label">Historical Carrier Rate${countLabel}</div>
+                                <div class="quote-result-value">—</div>
+                            </div>
+                            <p class="quote-no-history">No cached rate for ${allMatchedLoads.length > 1 ? 'these matches' : 'this match'} yet - set a $/mile rate below to work one out manually.</p>
+                        `;
+                    }
                 } else {
                     priceHtml = `<p class="quote-no-history">No past loads found on or near this lane yet - archive a load on this route to get a price estimate, or set a $/mile rate below to work one out manually.</p>`;
                 }
@@ -5734,6 +5734,7 @@
                 if (currentQuoteMiles !== null) {
                     perMileHtml = `
                         <div class="quote-permile-section">
+                            <div class="quote-section-label">Or Calculate Manually</div>
                             <div class="form-group">
                                 <label for="quotePerMileRate">Try a $/mile carrier rate</label>
                                 <input type="number" id="quotePerMileRate" step="0.1" min="0" placeholder="e.g., 2.50" oninput="updatePerMileEstimate()">
@@ -5746,6 +5747,16 @@
                                 <div class="quote-result-label">Suggested Customer Price</div>
                                 <div class="quote-result-value" id="quotePerMileResult">—</div>
                             </div>
+                            <div class="quote-permile-section quote-reverse-section">
+                                <div class="form-group">
+                                    <label for="quoteReverseRate">Try a Carrier Rate ($)</label>
+                                    <input type="number" id="quoteReverseRate" step="1" min="0" placeholder="e.g., 900" oninput="updateReverseRateEstimate()">
+                                </div>
+                                <div class="quote-result-row">
+                                    <div class="quote-result-label">Per Mile</div>
+                                    <div class="quote-result-value" id="quoteReverseRateResult">—</div>
+                                </div>
+                            </div>
                         </div>
                     `;
                 }
@@ -5753,6 +5764,7 @@
                 resultsEl.innerHTML = mileageHtml + priceHtml + perMileHtml;
                 resultsEl.classList.add('active');
                 updatePerMileEstimate();
+                updateReverseRateEstimate();
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Calculate';

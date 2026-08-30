@@ -478,6 +478,15 @@
             flex-wrap: wrap;
         }
 
+        /* Every modal shares the same z-index, so which one paints on top
+           of another is otherwise just DOM order - the PDF viewer can be
+           opened from on top of several other modals (Quote Calculator,
+           the board, Archived), so it always needs to win regardless of
+           where it happens to sit in the markup. */
+        #pdfViewerModal {
+            z-index: 1100;
+        }
+
         .modal-content {
             background: white;
             padding: 35px;
@@ -766,19 +775,46 @@
             display: block;
         }
 
-        .quote-history-panel h3 {
-            font-size: 13px;
-            font-weight: 700;
-            color: #333;
+        .quote-history-header {
             margin-bottom: 12px;
             padding-bottom: 10px;
             border-bottom: 2px solid #f0f0f0;
+        }
+
+        .quote-history-header h3 {
+            font-size: 13px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 6px;
+        }
+
+        /* Switches every rate below between the flat $ amount and $/mile -
+           full width since the panel itself is narrow (240px). */
+        .quote-history-header select {
+            width: 100%;
+            font-size: 11px;
+            font-weight: 600;
+            color: #555;
+            padding: 4px 6px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: white;
         }
 
         .quote-history-empty {
             font-size: 12px;
             font-weight: 600;
             color: #999;
+        }
+
+        .quote-history-more {
+            font-size: 11px;
+            font-weight: 600;
+            color: #999;
+            text-align: center;
+            margin: 10px 0 0;
+            padding-top: 8px;
+            border-top: 1px dashed #eee;
         }
 
         .quote-history-item {
@@ -2133,7 +2169,13 @@
         </div>
 
         <div class="quote-history-panel" id="quoteHistoryPanel">
-            <h3>Past Loads On This Lane</h3>
+            <div class="quote-history-header">
+                <h3>Past Loads On This Lane</h3>
+                <select id="quoteHistoryRateMode" onchange="renderQuoteHistoryPanel(lastLabeledMatches, lastHistoryHiddenCount)">
+                    <option value="total">Total $</option>
+                    <option value="perMile">$ / mile</option>
+                </select>
+            </div>
             <div id="quoteHistoryList"></div>
         </div>
     </div>
@@ -3148,8 +3190,11 @@
                 resultsEl.innerHTML = '';
                 resultsEl.classList.remove('active');
                 currentQuoteMiles = null;
+                lastLabeledMatches = [];
+                lastHistoryHiddenCount = 0;
                 document.getElementById('quoteHistoryPanel').classList.remove('active');
                 document.getElementById('quoteHistoryList').innerHTML = '';
+                document.getElementById('quoteHistoryRateMode').value = 'total';
                 hideQuoteMap();
             } else if (modalId === 'pdfViewerModal') {
                 // Release the blob URL rather than leaking it.
@@ -5256,9 +5301,48 @@
         // you act on from here.
         // labeledMatches: [{ load, label }] - label is "Exact match" or
         // "~N mi away" for a similar-lane match within NEARBY_RADIUS_MILES.
-        function renderQuoteHistoryPanel(labeledMatches) {
+        // Only an "Exact match" shares the lane just calculated (same
+        // pickup/delivery), so currentQuoteMiles is a real mileage for it.
+        // A nearby match is a genuinely different lane (pickup and/or
+        // delivery within NEARBY_RADIUS_MILES, not the same route), so its
+        // own length isn't known here - showing $/mile against
+        // currentQuoteMiles for those would just be wrong, not an
+        // estimate, so they fall back to "—" in that mode instead.
+        function formatQuoteHistoryRate(load, label, mode) {
+            if (typeof load.carrierRate !== 'number') return '—';
+            if (mode !== 'perMile') return '$' + load.carrierRate.toLocaleString();
+            if (label !== 'Exact match' || !currentQuoteMiles) return '—';
+            return '$' + (load.carrierRate / currentQuoteMiles).toFixed(2) + '/mi';
+        }
+
+        // Exact-lane matches always sort ahead of nearby ones, and within
+        // each group the most recent load wins - a recent rate tracks
+        // today's diesel/market prices far better than an old one on the
+        // same lane, so recency matters more here than how close a
+        // nearby lane is.
+        function sortForHistoryDisplay(labeledMatches) {
+            return [...labeledMatches].sort((a, b) => {
+                const aExact = a.label === 'Exact match' ? 0 : 1;
+                const bExact = b.label === 'Exact match' ? 0 : 1;
+                if (aExact !== bExact) return aExact - bExact;
+                return (b.load.archivedAt || '').localeCompare(a.load.archivedAt || '');
+            });
+        }
+
+        // The panel is a quick reference, not a scrollable wall of history -
+        // once a lane has built up a lot of archived loads, only the most
+        // relevant ones (exact matches first, most recent within each
+        // group - see sortForHistoryDisplay above) are worth showing.
+        const HISTORY_DISPLAY_LIMIT = 8;
+
+        let lastHistoryHiddenCount = 0;
+
+        function renderQuoteHistoryPanel(labeledMatches, hiddenCount) {
+            lastLabeledMatches = labeledMatches;
+            lastHistoryHiddenCount = hiddenCount || 0;
             const panel = document.getElementById('quoteHistoryPanel');
             const listEl = document.getElementById('quoteHistoryList');
+            const mode = document.getElementById('quoteHistoryRateMode').value;
 
             if (!labeledMatches.length) {
                 listEl.innerHTML = '<p class="quote-history-empty">No past loads found on this lane yet.</p>';
@@ -5268,12 +5352,14 @@
                         <div class="quote-history-lane">${escapeHtml(load.pickupCity || '?')} → ${escapeHtml(load.deliveryCity || '?')}</div>
                         <div class="quote-history-meta">
                             <div class="quote-history-carrier">${escapeHtml(load.carrierName || '—')}</div>
-                            <div class="quote-history-rate">${typeof load.carrierRate === 'number' ? '$' + load.carrierRate.toLocaleString() : '—'}</div>
+                            <div class="quote-history-rate">${formatQuoteHistoryRate(load, label, mode)}</div>
                             ${(load.pdfData || load.hasPdf) ? `<button class="quote-history-pdf-link" onclick="openPdfViewer('${load.id}', event)" title="View rate con PDF">📎</button>` : ''}
                         </div>
                         <div class="quote-history-distance">${escapeHtml(label)}</div>
                     </div>
-                `).join('');
+                `).join('') + (lastHistoryHiddenCount > 0
+                    ? `<p class="quote-history-more">+${lastHistoryHiddenCount} more not shown</p>`
+                    : '');
             }
 
             panel.classList.add('active');
@@ -5426,6 +5512,11 @@
         // experimentation box can react live without another round trip.
         let currentQuoteMiles = null;
 
+        // The last set of history matches rendered, kept around so the
+        // "Total $ / $ per mile" dropdown can just re-render instead of
+        // re-running the whole search.
+        let lastLabeledMatches = [];
+
         // Recomputes the "price at that rate" line live as the $/mile
         // input changes - lets you play with different per-mile rates on
         // the spot, which matters most on a lane with no historical loads
@@ -5523,7 +5614,9 @@
                     hideQuoteMap();
                 }
 
-                renderQuoteHistoryPanel(labeledMatches);
+                const sortedForDisplay = sortForHistoryDisplay(labeledMatches);
+                const displayMatches = sortedForDisplay.slice(0, HISTORY_DISPLAY_LIMIT);
+                renderQuoteHistoryPanel(displayMatches, sortedForDisplay.length - displayMatches.length);
 
                 const allMatchedLoads = labeledMatches.map(m => m.load);
                 const includesNearby = labeledMatches.some(m => m.label !== 'Exact match');

@@ -807,6 +807,16 @@
             color: #999;
         }
 
+        .quote-history-more {
+            font-size: 11px;
+            font-weight: 600;
+            color: #999;
+            text-align: center;
+            margin: 10px 0 0;
+            padding-top: 8px;
+            border-top: 1px dashed #eee;
+        }
+
         .quote-history-item {
             padding: 8px 0;
             border-bottom: 1px solid #f0f0f0;
@@ -2161,7 +2171,7 @@
         <div class="quote-history-panel" id="quoteHistoryPanel">
             <div class="quote-history-header">
                 <h3>Past Loads On This Lane</h3>
-                <select id="quoteHistoryRateMode" onchange="renderQuoteHistoryPanel(lastLabeledMatches)">
+                <select id="quoteHistoryRateMode" onchange="renderQuoteHistoryPanel(lastLabeledMatches, lastHistoryHiddenCount)">
                     <option value="total">Total $</option>
                     <option value="perMile">$ / mile</option>
                 </select>
@@ -3181,6 +3191,7 @@
                 resultsEl.classList.remove('active');
                 currentQuoteMiles = null;
                 lastLabeledMatches = [];
+                lastHistoryHiddenCount = 0;
                 document.getElementById('quoteHistoryPanel').classList.remove('active');
                 document.getElementById('quoteHistoryList').innerHTML = '';
                 document.getElementById('quoteHistoryRateMode').value = 'total';
@@ -5304,8 +5315,31 @@
             return '$' + (load.carrierRate / currentQuoteMiles).toFixed(2) + '/mi';
         }
 
-        function renderQuoteHistoryPanel(labeledMatches) {
+        // Exact-lane matches always sort ahead of nearby ones, and within
+        // each group the most recent load wins - a recent rate tracks
+        // today's diesel/market prices far better than an old one on the
+        // same lane, so recency matters more here than how close a
+        // nearby lane is.
+        function sortForHistoryDisplay(labeledMatches) {
+            return [...labeledMatches].sort((a, b) => {
+                const aExact = a.label === 'Exact match' ? 0 : 1;
+                const bExact = b.label === 'Exact match' ? 0 : 1;
+                if (aExact !== bExact) return aExact - bExact;
+                return (b.load.archivedAt || '').localeCompare(a.load.archivedAt || '');
+            });
+        }
+
+        // The panel is a quick reference, not a scrollable wall of history -
+        // once a lane has built up a lot of archived loads, only the most
+        // relevant ones (exact matches first, most recent within each
+        // group - see sortForHistoryDisplay above) are worth showing.
+        const HISTORY_DISPLAY_LIMIT = 8;
+
+        let lastHistoryHiddenCount = 0;
+
+        function renderQuoteHistoryPanel(labeledMatches, hiddenCount) {
             lastLabeledMatches = labeledMatches;
+            lastHistoryHiddenCount = hiddenCount || 0;
             const panel = document.getElementById('quoteHistoryPanel');
             const listEl = document.getElementById('quoteHistoryList');
             const mode = document.getElementById('quoteHistoryRateMode').value;
@@ -5323,7 +5357,9 @@
                         </div>
                         <div class="quote-history-distance">${escapeHtml(label)}</div>
                     </div>
-                `).join('');
+                `).join('') + (lastHistoryHiddenCount > 0
+                    ? `<p class="quote-history-more">+${lastHistoryHiddenCount} more not shown</p>`
+                    : '');
             }
 
             panel.classList.add('active');
@@ -5578,7 +5614,9 @@
                     hideQuoteMap();
                 }
 
-                renderQuoteHistoryPanel(labeledMatches);
+                const sortedForDisplay = sortForHistoryDisplay(labeledMatches);
+                const displayMatches = sortedForDisplay.slice(0, HISTORY_DISPLAY_LIMIT);
+                renderQuoteHistoryPanel(displayMatches, sortedForDisplay.length - displayMatches.length);
 
                 const allMatchedLoads = labeledMatches.map(m => m.load);
                 const includesNearby = labeledMatches.some(m => m.label !== 'Exact match');

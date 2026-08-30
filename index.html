@@ -5300,9 +5300,13 @@
         // ── Route map ────────────────────────────────────────────────
         // A quick "where in the country is this" glance - especially
         // useful for a lane between two cities you don't already know off
-        // the top of your head. Free tiles (OpenStreetMap via Leaflet), no
-        // API key. The map instance is created once and reused across
-        // calculations rather than torn down and rebuilt each time.
+        // the top of your head. Free tiles, no API key. CARTO's Voyager
+        // style (built on the same free OpenStreetMap data as before) is
+        // used instead of the plain default OSM style - it labels more
+        // cities and renders state/country borders more clearly at the
+        // zoomed-out levels a cross-country lane usually lands on. The
+        // map instance is created once and reused across calculations
+        // rather than torn down and rebuilt each time.
         let quoteMap = null;
         let quoteRouteLine = null;
         let quoteMapMarkers = [];
@@ -5311,14 +5315,19 @@
             document.getElementById('quoteMapPanel').classList.remove('active');
         }
 
-        function showQuoteRoute(from, to) {
+        // geometry: the road-following [lat, lon] points from OSRM, or
+        // null to fall back to a straight line between the two cities
+        // (only happens if routing itself failed, same case the mileage
+        // estimate falls back for).
+        function showQuoteRoute(from, to, geometry) {
             document.getElementById('quoteMapPanel').classList.add('active');
 
             if (!quoteMap) {
                 quoteMap = L.map('quoteMapContainer');
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '&copy; OpenStreetMap contributors',
-                    maxZoom: 18
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                    attribution: '&copy; OpenStreetMap contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                    subdomains: 'abcd',
+                    maxZoom: 19
                 }).addTo(quoteMap);
             }
 
@@ -5333,7 +5342,8 @@
             const toLatLng = [to.lat, to.lon];
             quoteMapMarkers.push(L.marker(fromLatLng).addTo(quoteMap));
             quoteMapMarkers.push(L.marker(toLatLng).addTo(quoteMap));
-            quoteRouteLine = L.polyline([fromLatLng, toLatLng], { color: '#2563eb', weight: 4 }).addTo(quoteMap);
+            const routePoints = Array.isArray(geometry) && geometry.length > 1 ? geometry : [fromLatLng, toLatLng];
+            quoteRouteLine = L.polyline(routePoints, { color: '#2563eb', weight: 4 }).addTo(quoteMap);
 
             // The panel was just switched from display:none to visible
             // above - Leaflet needs a real, laid-out container size before
@@ -5515,18 +5525,24 @@
             return coords;
         }
 
-        // Actual road-following distance via OSRM's free public routing
-        // API - no API key needed, and far closer to what a mapping app
-        // reports than a straight-line estimate (which runs noticeably
-        // short on routes that aren't a straight shot, like Midland-Tyler).
-        async function getDrivingMiles(from, to) {
-            const url = `https://router.project-osrm.org/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false`;
+        // Actual road-following distance AND the road's own path via
+        // OSRM's free public routing API - no API key needed, and far
+        // closer to what a mapping app reports than a straight-line
+        // estimate (which runs noticeably short on routes that aren't a
+        // straight shot, like Midland-Tyler). The geometry is what lets
+        // the route map draw the real highway curve instead of a ruler-
+        // straight line between the two cities.
+        async function getDrivingRoute(from, to) {
+            const url = `https://router.project-osrm.org/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=full&geometries=geojson`;
             const res = await fetch(url);
             if (!res.ok) throw new Error('Routing request failed');
             const data = await res.json();
-            const meters = data.routes && data.routes[0] && data.routes[0].distance;
-            if (typeof meters !== 'number') throw new Error('No route found');
-            return meters / 1609.344;
+            const route = data.routes && data.routes[0];
+            if (!route || typeof route.distance !== 'number') throw new Error('No route found');
+            // GeoJSON coordinates are [lon, lat] - Leaflet wants [lat, lon].
+            const coords = route.geometry && route.geometry.coordinates;
+            const geometry = Array.isArray(coords) ? coords.map(([lon, lat]) => [lat, lon]) : null;
+            return { miles: route.distance / 1609.344, geometry };
         }
 
         // Straight-line (great-circle) distance - only used as a fallback
@@ -5675,9 +5691,12 @@
                     const [from, to] = await Promise.all([geocodeCity(pickup), geocodeCity(delivery)]);
                     if (from && to) {
                         let miles;
+                        let geometry = null;
                         let note = '';
                         try {
-                            miles = await getDrivingMiles(from, to);
+                            const route = await getDrivingRoute(from, to);
+                            miles = route.miles;
+                            geometry = route.geometry;
                         } catch (routeErr) {
                             console.error('Routing failed, falling back to a straight-line estimate:', routeErr);
                             miles = haversineMiles(from, to) * ROAD_DISTANCE_FACTOR;
@@ -5691,7 +5710,7 @@
                                 <div class="quote-result-value">${miles.toLocaleString()} mi${note}</div>
                             </div>
                         `;
-                        showQuoteRoute(from, to);
+                        showQuoteRoute(from, to, geometry);
 
                         // Regional loads that never matched on exact city
                         // text still count as a fair comp - a load picked

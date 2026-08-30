@@ -1086,7 +1086,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 16px;
+            gap: 12px;
             flex-wrap: nowrap;
         }
 
@@ -1149,7 +1149,7 @@
 
         .load-field.field-rate-con {
             background: #f0f0f0;
-            padding: 8px 14px;
+            padding: 8px 10px;
             border-radius: 6px;
             flex-shrink: 0;
         }
@@ -1160,10 +1160,13 @@
 
         /* Fixed width (not shrinkable) so a long name always gets the room
            it needs and pickup/delivery aren't the ones giving it up - sized
-           to what CARRIER_NAME_MAX_LEN actually trims to rather than
-           leaving a lot of dead space around a typical short/medium name. */
+           from actually measuring real carrier names in this font (most
+           run 140-210px; a handful of especially long combined names
+           still lean on the ellipsis safety net below, but only after
+           showing far more of the real name than a character-count trim
+           ever did). */
         .load-field.field-carrier {
-            flex: 0 0 170px;
+            flex: 0 0 220px;
         }
 
         /* Carrier name is pre-trimmed to whole words in JS to fit one line -
@@ -1194,7 +1197,7 @@
 
         .load-field.field-pickup,
         .load-field.field-delivery {
-            flex: 1 1 210px;
+            flex: 1 1 185px;
         }
 
         /* Same fix as the carrier name above - a crowded row can shrink
@@ -1334,7 +1337,7 @@
             align-items: center;
             gap: 3px;
             flex-shrink: 0;
-            width: 130px;
+            width: 110px;
         }
 
         .load-rc-row {
@@ -4767,7 +4770,7 @@
                         <div class="load-field field-carrier">
                             <div class="load-field-label">Carrier</div>
                             <div class="load-field-value" title="${escapeHtml(load.carrierName)}">${escapeHtml(formatCarrierNameDisplay(load.carrierName))}</div>
-                            ${load.carrierPhone ? `<div class="load-carrier-phone">${escapeHtml(load.carrierPhone)}</div>` : ''}
+                            ${load.carrierPhone ? `<div class="load-carrier-phone">${escapeHtml(formatCarrierPhoneDisplay(load.carrierPhone))}</div>` : ''}
                         </div>
                         <div class="load-field field-pickup">
                             <div class="load-field-label">Pickup</div>
@@ -5789,26 +5792,37 @@
             return dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
         }
 
-        // Carrier name as shown on the board - kept to one clean line. The
-        // full name (LLC/Inc included) is still what's stored and what shows
-        // in the Edit form; this only affects the card display.
-        const CARRIER_NAME_MAX_LEN = 20;
-
+        // Carrier name as shown on the board. The full name (LLC/Inc
+        // included) is still what's stored and what shows in the Edit
+        // form; this only affects the card display. Used to also cut the
+        // name down to a fixed character count, dropping whole trailing
+        // words - but that chopped good names short even when the card
+        // had room to show them in full (e.g. "Knight-Swift
+        // Transportation" losing "Transportation" entirely), which read
+        // as broken/wrong rather than merely trimmed. The field-carrier
+        // CSS below already clips with a real "…" and never wraps, so
+        // that's the only truncation this needs - shows as much of the
+        // real name as fits instead of guessing a character budget.
         function formatCarrierNameDisplay(rawName) {
             let name = String(rawName || '').trim();
 
             // The LLC/Inc suffix is never useful on the board - drop it.
             name = name.replace(/[,.]?\s*(?:L\.?L\.?C\.?|INC(?:ORPORATED)?\.?)\s*$/i, '').trim();
 
-            if (name.length <= CARRIER_NAME_MAX_LEN) return name;
+            return name;
+        }
 
-            // Over the limit - drop whole trailing words rather than cutting
-            // a word short, until it fits (or only one word is left).
-            const words = name.split(/\s+/);
-            while (words.length > 1 && words.join(' ').length > CARRIER_NAME_MAX_LEN) {
-                words.pop();
-            }
-            return words.join(' ');
+        // The dispatch contact's name is stored (and extracted) as
+        // "PHONE - First Last", but only the first name is worth showing
+        // here - it's a quick "who do I ask for" on the board, not a
+        // legal name.
+        function formatCarrierPhoneDisplay(rawPhone) {
+            const text = String(rawPhone || '');
+            const dashIndex = text.indexOf(' - ');
+            if (dashIndex === -1) return text;
+            const phone = text.slice(0, dashIndex);
+            const firstName = text.slice(dashIndex + 3).trim().split(/\s+/)[0] || '';
+            return firstName ? `${phone} - ${firstName}` : phone;
         }
 
         function escapeHtml(text) {

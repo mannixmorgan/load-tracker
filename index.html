@@ -5790,8 +5790,8 @@
                             <div class="form-group">
                                 <label for="quoteManualMode">Calculate</label>
                                 <select id="quoteManualMode" onchange="updateManualCalcMode()">
-                                    <option value="perMile">Try a $/mile carrier rate</option>
-                                    <option value="carrierRate">Try a Carrier Rate ($)</option>
+                                    <option value="perMile"${allMatchedLoads.length ? '' : ' selected'}>Try a $/mile carrier rate</option>
+                                    <option value="carrierRate"${allMatchedLoads.length ? ' selected' : ''}>Try a Carrier Rate ($)</option>
                                 </select>
                             </div>
                             <div class="form-group">

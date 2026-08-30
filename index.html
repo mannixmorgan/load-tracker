@@ -5546,22 +5546,43 @@
         // Loads on a similar-but-not-identical lane - regional loads that
         // never matched on exact city text still count as a fair comp for
         // pricing, e.g. a Midland-Tyler quote should also pull up an
-        // Odessa-Lindale load. Geocoded one at a time (the cache above
-        // absorbs repeat cities) rather than all at once, to stay polite
-        // to the free geocoding service.
+        // Odessa-Lindale load. Geocoded one at a time (rather than all at
+        // once) to stay polite to the free geocoding service, which is
+        // fine once a lane's cities are cached from a past search but can
+        // take real time the first time a lane with a lot of archived
+        // history (bulk-imported, say) gets checked - so only the most
+        // recent NEARBY_CANDIDATE_LIMIT candidates are even considered,
+        // capping the worst case regardless of how large the archive gets.
         const NEARBY_RADIUS_MILES = 50;
+        const NEARBY_CANDIDATE_LIMIT = 30;
 
         async function findNearbyArchivedLoads(pickupCoords, deliveryCoords, excludeIds) {
-            const candidates = archivedLoads.filter(l => !excludeIds.includes(l.id));
+            const candidates = archivedLoads
+                .filter(l => !excludeIds.includes(l.id))
+                .sort((a, b) => (b.archivedAt || '').localeCompare(a.archivedAt || ''))
+                .slice(0, NEARBY_CANDIDATE_LIMIT);
+
+            // Geocode each distinct city only once no matter how many of
+            // these candidates share it, rather than re-awaiting the same
+            // city repeatedly - a dispatcher's history is full of repeat
+            // lanes. geocodeCity's own cache means a city already looked
+            // up on a past search resolves instantly either way.
+            const uniqueCities = [...new Set(
+                candidates.flatMap(l => [l.pickupCity, l.deliveryCity]).filter(Boolean)
+            )];
+            const cityCoords = new Map();
+            for (const city of uniqueCities) {
+                try {
+                    cityCoords.set(city, await geocodeCity(city));
+                } catch (err) {
+                    cityCoords.set(city, null);
+                }
+            }
+
             const results = [];
             for (const load of candidates) {
-                let loadPickupCoords, loadDeliveryCoords;
-                try {
-                    loadPickupCoords = await geocodeCity(load.pickupCity);
-                    loadDeliveryCoords = await geocodeCity(load.deliveryCity);
-                } catch (err) {
-                    continue;
-                }
+                const loadPickupCoords = cityCoords.get(load.pickupCity);
+                const loadDeliveryCoords = cityCoords.get(load.deliveryCity);
                 if (!loadPickupCoords || !loadDeliveryCoords) continue;
 
                 const pickupDist = haversineMiles(pickupCoords, loadPickupCoords);
@@ -5696,14 +5717,22 @@
                         // Regional loads that never matched on exact city
                         // text still count as a fair comp - a load picked
                         // up and delivered within 50mi of this lane on
-                        // both ends.
-                        btn.textContent = 'Searching nearby lanes…';
-                        const excludeIds = exactMatches.map(l => l.id);
-                        const nearby = await findNearbyArchivedLoads(from, to, excludeIds);
-                        nearby.sort((a, b) => a.distance - b.distance);
-                        labeledMatches = labeledMatches.concat(
-                            nearby.map(({ load, distance }) => ({ load, label: `~${Math.round(distance)} mi away` }))
-                        );
+                        // both ends. Skipped once there are already enough
+                        // exact matches to fill the history panel and give
+                        // a solid price sample - a nearby match would only
+                        // ever rank below all of those anyway (exact
+                        // matches always sort first), so searching for
+                        // them just geocodes a pile of other cities for a
+                        // result nobody will see.
+                        if (exactMatches.length < HISTORY_DISPLAY_LIMIT) {
+                            btn.textContent = 'Searching nearby lanes…';
+                            const excludeIds = exactMatches.map(l => l.id);
+                            const nearby = await findNearbyArchivedLoads(from, to, excludeIds);
+                            nearby.sort((a, b) => a.distance - b.distance);
+                            labeledMatches = labeledMatches.concat(
+                                nearby.map(({ load, distance }) => ({ load, label: `~${Math.round(distance)} mi away` }))
+                            );
+                        }
                     } else {
                         mileageHtml = `
                             <div class="quote-result-row">

@@ -5447,14 +5447,20 @@
             return Math.round(value / 50) * 50;
         }
 
-        // Customer price always rounds UP to the next $50 - rounding to
-        // the nearest $50 could round a markup down below the true 10-15%
-        // (and floating-point math on the raw rate, e.g. 2250 * 1.10
-        // landing a hair under 2475, could round a boundary case down a
-        // full $50 step further still) - either way the customer should
-        // never be quoted less than the actual markup.
-        function roundUpToNearest50(value) {
-            return Math.ceil(value / 50) * 50;
+        // Customer price rounds to the nearest $50, but biased toward
+        // rounding down - a markup that clears a $50 line by only a
+        // little (e.g. $1,705, just $5 over $1,700) shouldn't jump all
+        // the way to the next $50 for such a small overage. Only rounds
+        // up once the overage passes $20: $0-$20 over rounds down,
+        // $21-$49 over rounds up.
+        function roundToNearest50Biased(value) {
+            // Guards against float noise like 200 * 1.10 === 220.00000000000003 -
+            // without this, a value that's mathematically an exact multiple
+            // of $50 could get bumped over the rounding threshold by a
+            // fraction of a cent that was never really there.
+            const cleaned = Math.round(value * 100) / 100;
+            const remainder = cleaned % 50;
+            return remainder <= 20 ? cleaned - remainder : cleaned - remainder + 50;
         }
 
         // Customer price is always the carrier rate marked up 10-15%, but
@@ -5464,8 +5470,8 @@
         // is, widening the top end (never the bottom, which stays the
         // true 10% markup) to make up the difference.
         function computeCustomerPriceRange(carrierRate) {
-            const low = roundUpToNearest50(carrierRate * 1.10);
-            let high = roundUpToNearest50(carrierRate * 1.15);
+            const low = roundToNearest50Biased(carrierRate * 1.10);
+            let high = roundToNearest50Biased(carrierRate * 1.15);
             if (high - low < 100) high = low + 100;
             return { low, high };
         }

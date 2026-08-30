@@ -808,13 +808,45 @@
         }
 
         .quote-history-more {
+            display: block;
+            width: 100%;
             font-size: 11px;
-            font-weight: 600;
-            color: #999;
+            font-weight: 700;
+            color: #1a5276;
             text-align: center;
             margin: 10px 0 0;
-            padding-top: 8px;
+            padding: 8px 0 0;
             border-top: 1px dashed #eee;
+            background: none;
+            border-left: none;
+            border-right: none;
+            border-bottom: none;
+            cursor: pointer;
+        }
+
+        .quote-history-more:hover {
+            text-decoration: underline;
+        }
+
+        /* "See All" pop-up - opens on top of the Quote Calculator so the
+           whole matched history can be scrolled through instead of just
+           the panel's top few. */
+        #allHistoryModal {
+            z-index: 1050;
+        }
+
+        .all-history-content {
+            max-width: 480px;
+            width: 90vw;
+        }
+
+        .all-history-list {
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
+        .all-history-list .quote-history-item {
+            padding: 10px 4px;
         }
 
         .quote-history-item {
@@ -2180,6 +2212,21 @@
         </div>
     </div>
 
+    <!-- All Past Loads On This Lane - opened from "See All" when the
+         side panel truncates a long history list. -->
+    <div class="modal" id="allHistoryModal">
+        <div class="modal-content all-history-content">
+            <div class="modal-header">
+                <h2>All Past Loads On This Lane</h2>
+                <button class="close-btn" onclick="closeAllHistoryModal()">&times;</button>
+            </div>
+            <div id="allHistoryList" class="all-history-list"></div>
+            <div class="form-actions">
+                <button type="button" class="btn-secondary" onclick="closeAllHistoryModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Edit Load Modal -->
     <div class="modal" id="editLoadModal">
         <div class="modal-content">
@@ -3192,9 +3239,12 @@
                 currentQuoteMiles = null;
                 lastLabeledMatches = [];
                 lastHistoryHiddenCount = 0;
+                lastAllSortedMatches = [];
                 document.getElementById('quoteHistoryPanel').classList.remove('active');
                 document.getElementById('quoteHistoryList').innerHTML = '';
                 document.getElementById('quoteHistoryRateMode').value = 'total';
+                document.getElementById('allHistoryModal').classList.remove('active');
+                document.getElementById('allHistoryList').innerHTML = '';
                 hideQuoteMap();
             } else if (modalId === 'pdfViewerModal') {
                 // Release the blob URL rather than leaking it.
@@ -5332,10 +5382,27 @@
         // The panel is a quick reference, not a scrollable wall of history -
         // once a lane has built up a lot of archived loads, only the most
         // relevant ones (exact matches first, most recent within each
-        // group - see sortForHistoryDisplay above) are worth showing.
+        // group - see sortForHistoryDisplay above) are worth showing. The
+        // full sorted list is kept around too (lastAllSortedMatches) so
+        // "See All" can open a scrollable modal with everything else.
         const HISTORY_DISPLAY_LIMIT = 8;
 
         let lastHistoryHiddenCount = 0;
+        let lastAllSortedMatches = [];
+
+        function quoteHistoryRowHtml(load, label, mode) {
+            return `
+                <div class="quote-history-item">
+                    <div class="quote-history-lane">${escapeHtml(load.pickupCity || '?')} → ${escapeHtml(load.deliveryCity || '?')}</div>
+                    <div class="quote-history-meta">
+                        <div class="quote-history-carrier">${escapeHtml(load.carrierName || '—')}</div>
+                        <div class="quote-history-rate">${formatQuoteHistoryRate(load, label, mode)}</div>
+                        ${(load.pdfData || load.hasPdf) ? `<button class="quote-history-pdf-link" onclick="openPdfViewer('${load.id}', event)" title="View rate con PDF">📎</button>` : ''}
+                    </div>
+                    <div class="quote-history-distance">${escapeHtml(label)}</div>
+                </div>
+            `;
+        }
 
         function renderQuoteHistoryPanel(labeledMatches, hiddenCount) {
             lastLabeledMatches = labeledMatches;
@@ -5347,22 +5414,34 @@
             if (!labeledMatches.length) {
                 listEl.innerHTML = '<p class="quote-history-empty">No past loads found on this lane yet.</p>';
             } else {
-                listEl.innerHTML = labeledMatches.map(({ load, label }) => `
-                    <div class="quote-history-item">
-                        <div class="quote-history-lane">${escapeHtml(load.pickupCity || '?')} → ${escapeHtml(load.deliveryCity || '?')}</div>
-                        <div class="quote-history-meta">
-                            <div class="quote-history-carrier">${escapeHtml(load.carrierName || '—')}</div>
-                            <div class="quote-history-rate">${formatQuoteHistoryRate(load, label, mode)}</div>
-                            ${(load.pdfData || load.hasPdf) ? `<button class="quote-history-pdf-link" onclick="openPdfViewer('${load.id}', event)" title="View rate con PDF">📎</button>` : ''}
-                        </div>
-                        <div class="quote-history-distance">${escapeHtml(label)}</div>
-                    </div>
-                `).join('') + (lastHistoryHiddenCount > 0
-                    ? `<p class="quote-history-more">+${lastHistoryHiddenCount} more not shown</p>`
-                    : '');
+                const totalCount = labeledMatches.length + lastHistoryHiddenCount;
+                listEl.innerHTML = labeledMatches.map(({ load, label }) => quoteHistoryRowHtml(load, label, mode)).join('')
+                    + (lastHistoryHiddenCount > 0
+                        ? `<button type="button" class="quote-history-more" onclick="openAllHistoryModal()">See All ${totalCount} Loads</button>`
+                        : '');
             }
 
             panel.classList.add('active');
+            renderAllHistoryModalIfOpen();
+        }
+
+        function openAllHistoryModal() {
+            const listEl = document.getElementById('allHistoryList');
+            const mode = document.getElementById('quoteHistoryRateMode').value;
+            listEl.innerHTML = lastAllSortedMatches.map(({ load, label }) => quoteHistoryRowHtml(load, label, mode)).join('');
+            document.getElementById('allHistoryModal').classList.add('active');
+        }
+
+        // Keeps the "See All" modal in sync if the Total $ / $ per mile
+        // dropdown is switched while it's still open, without needing its
+        // own separate control.
+        function renderAllHistoryModalIfOpen() {
+            const modal = document.getElementById('allHistoryModal');
+            if (modal.classList.contains('active')) openAllHistoryModal();
+        }
+
+        function closeAllHistoryModal() {
+            document.getElementById('allHistoryModal').classList.remove('active');
         }
 
         // Lets "Dallas, TX" and "dallas,tx" and "Dallas,  TX." all match the
@@ -5615,6 +5694,7 @@
                 }
 
                 const sortedForDisplay = sortForHistoryDisplay(labeledMatches);
+                lastAllSortedMatches = sortedForDisplay;
                 const displayMatches = sortedForDisplay.slice(0, HISTORY_DISPLAY_LIMIT);
                 renderQuoteHistoryPanel(displayMatches, sortedForDisplay.length - displayMatches.length);
 

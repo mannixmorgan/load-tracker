@@ -4770,7 +4770,7 @@
                         <div class="load-field field-carrier">
                             <div class="load-field-label">Carrier</div>
                             <div class="load-field-value" title="${escapeHtml(load.carrierName)}">${escapeHtml(formatCarrierNameDisplay(load.carrierName))}</div>
-                            ${load.carrierPhone ? `<div class="load-carrier-phone">${escapeHtml(load.carrierPhone)}</div>` : ''}
+                            ${load.carrierPhone ? `<div class="load-carrier-phone">${escapeHtml(formatCarrierPhoneDisplay(load.carrierPhone))}</div>` : ''}
                         </div>
                         <div class="load-field field-pickup">
                             <div class="load-field-label">Pickup</div>
@@ -5810,6 +5810,19 @@
             name = name.replace(/[,.]?\s*(?:L\.?L\.?C\.?|INC(?:ORPORATED)?\.?)\s*$/i, '').trim();
 
             return name;
+        }
+
+        // The dispatch contact's name is stored (and extracted) as
+        // "PHONE - First Last", but only the first name is worth showing
+        // here - it's a quick "who do I ask for" on the board, not a
+        // legal name.
+        function formatCarrierPhoneDisplay(rawPhone) {
+            const text = String(rawPhone || '');
+            const dashIndex = text.indexOf(' - ');
+            if (dashIndex === -1) return text;
+            const phone = text.slice(0, dashIndex);
+            const firstName = text.slice(dashIndex + 3).trim().split(/\s+/)[0] || '';
+            return firstName ? `${phone} - ${firstName}` : phone;
         }
 
         function escapeHtml(text) {

@@ -5481,7 +5481,7 @@
         // come up over and over, so repeat lookups are instant after the
         // first time and the free geocoder isn't hit any harder than it
         // has to be.
-        const GEOCODE_CACHE_KEY = 'quoteGeocodeCache';
+        const GEOCODE_CACHE_KEY = 'quoteGeocodeCache_v2';
         let geocodeCache = {};
         try {
             geocodeCache = JSON.parse(localStorage.getItem(GEOCODE_CACHE_KEY)) || {};
@@ -5505,11 +5505,20 @@
             if (Object.prototype.hasOwnProperty.call(geocodeCache, key)) {
                 return geocodeCache[key];
             }
-            const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(cityState)}`;
+            // Ask for a handful of candidates instead of just the top-ranked
+            // one - a small town can share its name with an unrelated county
+            // of the same name (e.g. Crosby, TX near Houston vs. Crosby
+            // County, TX out in the Panhandle, ~500 miles away), and the
+            // county boundary sometimes outranks the actual town.
+            const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=us&q=${encodeURIComponent(cityState)}`;
             const res = await fetch(url);
             if (!res.ok) throw new Error('Geocoding request failed');
             const data = await res.json();
-            const coords = data.length ? { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) } : null;
+            // Prefer an actual populated place (city/town/village/etc, all
+            // reported by Nominatim as class "place") over a county or other
+            // administrative boundary that happens to match the same name.
+            const best = data.find(r => r.class === 'place') || data[0];
+            const coords = best ? { lat: parseFloat(best.lat), lon: parseFloat(best.lon) } : null;
             geocodeCache[key] = coords;
             saveGeocodeCache();
             return coords;

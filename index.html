@@ -2885,12 +2885,16 @@
         // save (single archive, bulk import, and editing an archived load
         // all funnel through here) so the Quote Calculator can look a lane
         // up with a targeted Firestore query instead of scanning the whole
-        // archive - see findMatchingArchivedLoads().
+        // archive - see findMatchingArchivedLoads(). pickupState/
+        // deliveryState do the same for the nearby-lane search - see
+        // findNearbyArchivedLoads().
         function apiArchiveLoad(record) {
             const withNormalized = {
                 ...record,
                 pickupCityNormalized: normalizeLocation(record.pickupCity),
-                deliveryCityNormalized: normalizeLocation(record.deliveryCity)
+                deliveryCityNormalized: normalizeLocation(record.deliveryCity),
+                pickupState: extractState(record.pickupCity),
+                deliveryState: extractState(record.deliveryCity)
             };
             return db.collection('archivedLoads').doc(record.id).set(withNormalized, { merge: true });
         }
@@ -2923,17 +2927,19 @@
         }
 
         // One-time backfill: archived loads saved before
-        // pickupCityNormalized/deliveryCityNormalized existed don't have
-        // them yet, so the Quote Calculator's targeted query would miss
-        // them entirely. This reads the whole archive exactly once, ever
-        // (guarded by a flag doc so it never runs again once done,
-        // including on every other device/session after this), and
-        // batch-writes the missing fields onto whatever needs them.
+        // pickupCityNormalized/deliveryCityNormalized or pickupState/
+        // deliveryState existed don't have them yet, so the Quote
+        // Calculator's targeted queries would miss them entirely. This
+        // reads the whole archive exactly once per still-missing field set
+        // (guarded by flag doc so each backfill never runs again once
+        // done, including on every other device/session after this), and
+        // batch-writes whatever's missing.
         async function migrateArchivedCityNormalizationOnce() {
             try {
                 const flagRef = db.collection('meta').doc('archiveMigration');
                 const flagDoc = await flagRef.get();
-                if (flagDoc.exists && flagDoc.data().normalizedCitiesDone) return;
+                const flags = flagDoc.exists ? flagDoc.data() : {};
+                if (flags.normalizedCitiesDone && flags.stateFieldsDone) return;
 
                 const snapshot = await db.collection('archivedLoads').get();
                 const BATCH_LIMIT = 400; // Firestore caps a batch at 500 writes
@@ -2942,11 +2948,17 @@
                 let touched = 0;
                 for (const doc of snapshot.docs) {
                     const data = doc.data();
-                    if (typeof data.pickupCityNormalized === 'string' && typeof data.deliveryCityNormalized === 'string') continue;
-                    batch.set(doc.ref, {
-                        pickupCityNormalized: normalizeLocation(data.pickupCity),
-                        deliveryCityNormalized: normalizeLocation(data.deliveryCity)
-                    }, { merge: true });
+                    const update = {};
+                    if (typeof data.pickupCityNormalized !== 'string' || typeof data.deliveryCityNormalized !== 'string') {
+                        update.pickupCityNormalized = normalizeLocation(data.pickupCity);
+                        update.deliveryCityNormalized = normalizeLocation(data.deliveryCity);
+                    }
+                    if (typeof data.pickupState !== 'string' || typeof data.deliveryState !== 'string') {
+                        update.pickupState = extractState(data.pickupCity);
+                        update.deliveryState = extractState(data.deliveryCity);
+                    }
+                    if (!Object.keys(update).length) continue;
+                    batch.set(doc.ref, update, { merge: true });
                     opsInBatch++;
                     touched++;
                     if (opsInBatch >= BATCH_LIMIT) {
@@ -2956,7 +2968,7 @@
                     }
                 }
                 if (opsInBatch > 0) await batch.commit();
-                await flagRef.set({ normalizedCitiesDone: true, migratedAt: new Date().toISOString(), recordsTouched: touched });
+                await flagRef.set({ normalizedCitiesDone: true, stateFieldsDone: true, migratedAt: new Date().toISOString(), recordsTouched: touched });
             } catch (err) {
                 console.error('Archive city-normalization migration failed (will retry next login):', err);
             }
@@ -5541,6 +5553,49 @@
                 .trim();
         }
 
+        // Pulls the state abbreviation off the end of a "City, ST" string -
+        // used to scope the nearby-lane search to a geographically relevant
+        // slice of the archive (see findNearbyArchivedLoads) instead of an
+        // arbitrary recency window.
+        function extractState(cityText) {
+            const parts = (cityText || '').split(',').map(s => s.trim()).filter(Boolean);
+            if (parts.length < 2) return null;
+            const last = parts[parts.length - 1].toUpperCase();
+            return /^[A-Z]{2}$/.test(last) ? last : null;
+        }
+
+        // Every US state (plus DC) mapped to the states it shares a land
+        // border with. A 50-mile radius essentially never reaches past a
+        // neighboring state, so "same state or a neighbor" covers every
+        // geographically-possible nearby match without having to scan the
+        // whole archive.
+        const US_STATE_NEIGHBORS = {
+            AL: ['FL', 'GA', 'MS', 'TN'], AK: [], AZ: ['CA', 'CO', 'NV', 'NM', 'UT'],
+            AR: ['LA', 'MS', 'MO', 'OK', 'TN', 'TX'], CA: ['AZ', 'NV', 'OR'],
+            CO: ['AZ', 'KS', 'NE', 'NM', 'OK', 'UT', 'WY'], CT: ['MA', 'NY', 'RI'],
+            DE: ['MD', 'NJ', 'PA'], FL: ['AL', 'GA'], GA: ['AL', 'FL', 'NC', 'SC', 'TN'],
+            HI: [], ID: ['MT', 'NV', 'OR', 'UT', 'WA', 'WY'],
+            IL: ['IN', 'IA', 'KY', 'MO', 'WI'], IN: ['IL', 'KY', 'MI', 'OH'],
+            IA: ['IL', 'MN', 'MO', 'NE', 'SD', 'WI'], KS: ['CO', 'MO', 'NE', 'OK'],
+            KY: ['IL', 'IN', 'MO', 'OH', 'TN', 'VA', 'WV'], LA: ['AR', 'MS', 'TX'],
+            ME: ['NH'], MD: ['DE', 'PA', 'VA', 'WV', 'DC'],
+            MA: ['CT', 'NH', 'NY', 'RI', 'VT'], MI: ['IN', 'OH', 'WI'],
+            MN: ['IA', 'ND', 'SD', 'WI'], MS: ['AL', 'AR', 'LA', 'TN'],
+            MO: ['AR', 'IL', 'IA', 'KS', 'KY', 'NE', 'OK', 'TN'], MT: ['ID', 'ND', 'SD', 'WY'],
+            NE: ['CO', 'IA', 'KS', 'MO', 'SD', 'WY'], NV: ['AZ', 'CA', 'ID', 'OR', 'UT'],
+            NH: ['ME', 'MA', 'VT'], NJ: ['DE', 'NY', 'PA'], NM: ['AZ', 'CO', 'OK', 'TX', 'UT'],
+            NY: ['CT', 'MA', 'NJ', 'PA', 'VT'], NC: ['GA', 'SC', 'TN', 'VA'],
+            ND: ['MN', 'MT', 'SD'], OH: ['IN', 'KY', 'MI', 'PA', 'WV'],
+            OK: ['AR', 'CO', 'KS', 'MO', 'NM', 'TX'], OR: ['CA', 'ID', 'NV', 'WA'],
+            PA: ['DE', 'MD', 'NJ', 'NY', 'OH', 'WV'], RI: ['CT', 'MA'], SC: ['GA', 'NC'],
+            SD: ['IA', 'MN', 'MT', 'NE', 'ND', 'WY'],
+            TN: ['AL', 'AR', 'GA', 'KY', 'MS', 'MO', 'NC', 'VA'], TX: ['AR', 'LA', 'NM', 'OK'],
+            UT: ['AZ', 'CO', 'ID', 'NV', 'NM', 'WY'], VT: ['MA', 'NH', 'NY'],
+            VA: ['KY', 'MD', 'NC', 'TN', 'WV', 'DC'], WA: ['ID', 'OR'],
+            WV: ['KY', 'MD', 'OH', 'PA', 'VA'], WI: ['IL', 'IA', 'MI', 'MN'],
+            WY: ['CO', 'ID', 'MT', 'NE', 'SD', 'UT'], DC: ['MD', 'VA']
+        };
+
         // Exact-match cap for a Calculate run - the scan stops once it's
         // found this many, both to keep the read cost of a targeted
         // Firestore query tiny regardless of archive size, and because a
@@ -5829,21 +5884,35 @@
         // pricing, e.g. a Midland-Tyler quote should also pull up an
         // Odessa-Lindale load. There's no way to ask Firestore for "within
         // 50mi" directly (that needs geocoded distance, not a field
-        // filter), so this pulls a bounded, cheap candidate batch - just
-        // the most recent NEARBY_CANDIDATE_LIMIT archived loads, a single
-        // query regardless of how large the archive gets - and checks them
-        // one at a time, stopping as soon as NEARBY_MATCH_LIMIT qualifying
-        // matches are found so a lane that matches early doesn't pay to
-        // geocode the rest of the batch.
+        // filter) - but a 50mi radius essentially never reaches past the
+        // pickup's own state or a neighboring one, so the candidate query
+        // is scoped to pickupState being one of those instead of an
+        // arbitrary recency window. That covers the WHOLE archive
+        // geographically (an older load in-region is just as findable as
+        // a recent one) while still reading only a small, relevant slice
+        // of it rather than everything. Checked one at a time, stopping as
+        // soon as NEARBY_MATCH_LIMIT qualifying matches are found so a lane
+        // that matches early doesn't pay to geocode the rest of the batch.
         const NEARBY_RADIUS_MILES = 50;
-        const NEARBY_CANDIDATE_LIMIT = 30;
+        const NEARBY_CANDIDATE_LIMIT = 60;
         const NEARBY_MATCH_LIMIT = 5;
 
-        async function findNearbyArchivedLoads(pickupCoords, deliveryCoords, excludeIds) {
-            const snapshot = await db.collection('archivedLoads')
-                .orderBy('archivedAt', 'desc')
-                .limit(NEARBY_CANDIDATE_LIMIT)
-                .get();
+        async function findNearbyArchivedLoads(pickupCoords, deliveryCoords, excludeIds, pickupCityText) {
+            const pickupState = extractState(pickupCityText);
+            const relevantStates = pickupState
+                ? [pickupState, ...(US_STATE_NEIGHBORS[pickupState] || [])]
+                : null;
+
+            // Firestore's "in" filter caps out at 30 values - every state
+            // has well under that many neighbors, so this is always safe.
+            const query = relevantStates
+                ? db.collection('archivedLoads').where('pickupState', 'in', relevantStates)
+                // No usable state on the entered pickup text (unexpected
+                // format) - fall back to a recency-bounded query rather
+                // than skipping the nearby search altogether.
+                : db.collection('archivedLoads').orderBy('archivedAt', 'desc');
+
+            const snapshot = await query.limit(NEARBY_CANDIDATE_LIMIT).get();
             const candidates = snapshot.docs
                 .map(doc => doc.data())
                 .filter(l => !excludeIds.includes(l.id));
@@ -6044,7 +6113,7 @@
                 // result nobody will see.
                 if (searchingNearby) {
                     const excludeIds = exactMatches.map(l => l.id);
-                    findNearbyArchivedLoads(from, to, excludeIds).then(nearby => {
+                    findNearbyArchivedLoads(from, to, excludeIds, pickup).then(nearby => {
                         if (requestId !== quoteRequestId) return;
                         nearby.sort((a, b) => a.distance - b.distance);
                         const updatedMatches = labeledMatches.concat(

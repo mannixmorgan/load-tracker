@@ -5623,23 +5623,59 @@
             return request;
         }
 
+        async function fetchGeocodeCandidates(url) {
+            const res = await queueGeocodeFetch(url);
+            if (!res.ok) throw new Error('Geocoding request failed');
+            return res.json();
+        }
+
         // Free, no-API-key geocoder - turns a city/state into coordinates
-        // so a route can be looked up between them.
+        // so a route can be looked up between them. Tries progressively
+        // broader lookups if the previous one comes back empty, rather
+        // than reporting "not found" for a real (usually small/rural)
+        // place - a plain text search sometimes misses tiny towns that
+        // Google Maps' own database has no trouble with.
         async function geocodeCity(cityState) {
             const key = normalizeLocation(cityState);
             if (!key) return null;
             if (Object.prototype.hasOwnProperty.call(geocodeCache, key)) {
                 return geocodeCache[key];
             }
+
             // Ask for a handful of candidates instead of just the top-ranked
             // one - a small town can share its name with an unrelated county
             // of the same name (e.g. Crosby, TX near Houston vs. Crosby
             // County, TX out in the Panhandle, ~500 miles away), and the
             // county boundary sometimes outranks the actual town.
-            const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=us&q=${encodeURIComponent(cityState)}`;
-            const res = await queueGeocodeFetch(url);
-            if (!res.ok) throw new Error('Geocoding request failed');
-            const data = await res.json();
+            let data = await fetchGeocodeCandidates(
+                `https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=us&q=${encodeURIComponent(cityState)}`
+            );
+
+            // Some small/unincorporated US communities aren't cleanly
+            // tagged with a US country code in OpenStreetMap's data - the
+            // countrycodes filter above would silently exclude a real
+            // match like that, so retry without it before giving up.
+            if (!data.length) {
+                data = await fetchGeocodeCandidates(
+                    `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(cityState)}`
+                );
+            }
+
+            // A structured query (separate city/state/country fields)
+            // exercises a different lookup path in Nominatim than a plain
+            // text search, and can find a tiny town that loses out to
+            // nothing at all in the freeform relevance ranking above.
+            if (!data.length) {
+                const parts = cityState.split(',').map(s => s.trim()).filter(Boolean);
+                if (parts.length > 1) {
+                    const city = parts[0];
+                    const state = parts[parts.length - 1];
+                    data = await fetchGeocodeCandidates(
+                        `https://nominatim.openstreetmap.org/search?format=json&limit=5&city=${encodeURIComponent(city)}&state=${encodeURIComponent(state)}&country=USA`
+                    );
+                }
+            }
+
             // Prefer an actual populated place (city/town/village/etc, all
             // reported by Nominatim as class "place") over a county or other
             // administrative boundary that happens to match the same name.

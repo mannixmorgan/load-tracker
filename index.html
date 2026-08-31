@@ -5717,12 +5717,18 @@
             }
         }
 
+        // Bumped every time a new calculation starts, so a nearby-lane
+        // search that resolves after the user has already moved on to a
+        // different lane knows not to overwrite what's on screen.
+        let quoteRequestId = 0;
+
         async function calculateQuote(e) {
             e.preventDefault();
             const pickup = document.getElementById('quotePickupCity').value.trim();
             const delivery = document.getElementById('quoteDeliveryCity').value.trim();
             if (!pickup || !delivery) return;
 
+            const requestId = ++quoteRequestId;
             const btn = document.getElementById('quoteCalculateBtn');
             const resultsEl = document.getElementById('quoteResults');
             btn.disabled = true;
@@ -5734,11 +5740,12 @@
             try {
                 const exactMatches = [...findMatchingArchivedLoads(pickup, delivery)]
                     .sort((a, b) => (b.archivedAt || '').localeCompare(a.archivedAt || ''));
-                let labeledMatches = exactMatches.map(load => ({ load, label: 'Exact match' }));
+                const labeledMatches = exactMatches.map(load => ({ load, label: 'Exact match' }));
 
                 let mileageHtml;
+                let from, to;
                 try {
-                    const [from, to] = await Promise.all([geocodeCity(pickup), geocodeCity(delivery)]);
+                    [from, to] = await Promise.all([geocodeCity(pickup), geocodeCity(delivery)]);
                     if (from && to) {
                         let miles;
                         let note = '';
@@ -5758,26 +5765,6 @@
                             </div>
                         `;
                         showQuoteRoute(from, to);
-
-                        // Regional loads that never matched on exact city
-                        // text still count as a fair comp - a load picked
-                        // up and delivered within 50mi of this lane on
-                        // both ends. Skipped once there are already enough
-                        // exact matches to fill the history panel and give
-                        // a solid price sample - a nearby match would only
-                        // ever rank below all of those anyway (exact
-                        // matches always sort first), so searching for
-                        // them just geocodes a pile of other cities for a
-                        // result nobody will see.
-                        if (exactMatches.length < HISTORY_DISPLAY_LIMIT) {
-                            btn.textContent = 'Searching nearby lanes…';
-                            const excludeIds = exactMatches.map(l => l.id);
-                            const nearby = await findNearbyArchivedLoads(from, to, excludeIds);
-                            nearby.sort((a, b) => a.distance - b.distance);
-                            labeledMatches = labeledMatches.concat(
-                                nearby.map(({ load, distance }) => ({ load, label: `~${Math.round(distance)} mi away` }))
-                            );
-                        }
                     } else {
                         mileageHtml = `
                             <div class="quote-result-row">
@@ -5798,91 +5785,140 @@
                     hideQuoteMap();
                 }
 
-                const sortedForDisplay = sortForHistoryDisplay(labeledMatches);
-                lastAllSortedMatches = sortedForDisplay;
-                const displayMatches = sortedForDisplay.slice(0, HISTORY_DISPLAY_LIMIT);
-                renderQuoteHistoryPanel(displayMatches, sortedForDisplay.length - displayMatches.length);
+                // Exact-match results render immediately - the only network
+                // calls behind them are the 2 geocodes and 1 route lookup
+                // above, so the button never sits on a big archive's worth
+                // of nearby-lane geocoding.
+                const searchingNearby = !!(from && to && exactMatches.length < HISTORY_DISPLAY_LIMIT);
+                renderQuoteResults(requestId, mileageHtml, labeledMatches, searchingNearby);
 
-                const allMatchedLoads = labeledMatches.map(m => m.load);
-                const includesNearby = labeledMatches.some(m => m.label !== 'Exact match');
-                let priceHtml;
-                if (allMatchedLoads.length) {
-                    const countLabel = allMatchedLoads.length > 1
-                        ? ` (${allMatchedLoads.length} loads${includesNearby ? ` within ${NEARBY_RADIUS_MILES}mi` : ''})`
-                        : (includesNearby ? ` (within ${NEARBY_RADIUS_MILES}mi)` : '');
-
-                    // Loads archived before rate extraction existed (or
-                    // where it missed) may have no cached carrierRate -
-                    // excluded here rather than counted as a $0, which
-                    // would wreck a lowest-we-paid floor.
-                    const validRates = allMatchedLoads.map(load => load.carrierRate).filter(r => typeof r === 'number');
-                    if (validRates.length) {
-                        const minRate = Math.min(...validRates);
-                        const maxRate = Math.max(...validRates);
-                        const carrierRateText = minRate === maxRate
-                            ? `$${minRate.toLocaleString()}`
-                            : `$${minRate.toLocaleString()} - $${maxRate.toLocaleString()}`;
-
-                        // Suggested Customer Price spans the same lowest-
-                        // to-highest spread as the carrier rate above it,
-                        // rather than a single average - the low end is
-                        // the 10% markup on the cheapest we've actually
-                        // paid, the high end is the 15% markup on the
-                        // most, so the whole range reflects the real
-                        // spread of what this lane has gone for.
-                        const low = computeCustomerPriceRange(minRate).low;
-                        const high = computeCustomerPriceRange(maxRate).high;
-
-                        priceHtml = `
-                            <div class="quote-result-row">
-                                <div class="quote-result-label">Historical Carrier Rate${countLabel}</div>
-                                <div class="quote-result-value">${carrierRateText}</div>
-                            </div>
-                            <div class="quote-result-row quote-result-highlight">
-                                <div class="quote-result-label">Suggested Customer Price</div>
-                                <div class="quote-result-value">$${low.toLocaleString()} - $${high.toLocaleString()}</div>
-                            </div>
-                        `;
-                    } else {
-                        priceHtml = `
-                            <div class="quote-result-row">
-                                <div class="quote-result-label">Historical Carrier Rate${countLabel}</div>
-                                <div class="quote-result-value">—</div>
-                            </div>
-                            <p class="quote-no-history">No cached rate for ${allMatchedLoads.length > 1 ? 'these matches' : 'this match'} yet - set a $/mile rate below to work one out manually.</p>
-                        `;
-                    }
-                } else {
-                    priceHtml = `<p class="quote-no-history">No past loads found on or near this lane yet - archive a load on this route to get a price estimate, or set a $/mile rate below to work one out manually.</p>`;
+                // Regional loads that never matched on exact city text
+                // still count as a fair comp - a load picked up and
+                // delivered within 50mi of this lane on both ends. Runs in
+                // the background (not awaited) so an archive full of
+                // uncached cities can never freeze the Calculate button;
+                // it just quietly refines the results a moment later.
+                // Skipped once there are already enough exact matches to
+                // fill the history panel and give a solid price sample - a
+                // nearby match would only ever rank below all of those
+                // anyway (exact matches always sort first), so searching
+                // for them just geocodes a pile of other cities for a
+                // result nobody will see.
+                if (searchingNearby) {
+                    const excludeIds = exactMatches.map(l => l.id);
+                    findNearbyArchivedLoads(from, to, excludeIds).then(nearby => {
+                        if (requestId !== quoteRequestId) return;
+                        nearby.sort((a, b) => a.distance - b.distance);
+                        const updatedMatches = labeledMatches.concat(
+                            nearby.map(({ load, distance }) => ({ load, label: `~${Math.round(distance)} mi away` }))
+                        );
+                        renderQuoteResults(requestId, mileageHtml, updatedMatches, false);
+                    }).catch(err => {
+                        console.error('Nearby-lane search failed:', err);
+                        if (requestId !== quoteRequestId) return;
+                        renderQuoteResults(requestId, mileageHtml, labeledMatches, false);
+                    });
                 }
-
-                let perMileHtml = '';
-                if (currentQuoteMiles !== null) {
-                    perMileHtml = `
-                        <div class="quote-permile-section">
-                            <div class="quote-section-label">Or Calculate Manually</div>
-                            <div class="form-group">
-                                <label for="quoteManualMode">Calculate</label>
-                                <select id="quoteManualMode" onchange="updateManualCalcMode()">
-                                    <option value="perMile"${allMatchedLoads.length ? '' : ' selected'}>Try a $/mile carrier rate</option>
-                                    <option value="carrierRate"${allMatchedLoads.length ? ' selected' : ''}>Try a Carrier Rate ($)</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <input type="number" id="quoteManualInput" step="0.1" min="0" placeholder="e.g., 2.50" oninput="updateManualCalcEstimate()">
-                            </div>
-                            <div id="quoteManualResults"></div>
-                        </div>
-                    `;
-                }
-
-                resultsEl.innerHTML = mileageHtml + priceHtml + perMileHtml;
-                resultsEl.classList.add('active');
-                updateManualCalcMode();
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Calculate';
             }
+        }
+
+        // Renders the mileage/price/history/manual-calc results for a
+        // Calculate run. Called once immediately with exact matches only,
+        // and again later if a background nearby-lane search turns up more
+        // - guarded by requestId so a stale search never overwrites a
+        // newer calculation the user has already moved on to.
+        function renderQuoteResults(requestId, mileageHtml, labeledMatches, searchingNearby) {
+            if (requestId !== quoteRequestId) return;
+            const resultsEl = document.getElementById('quoteResults');
+
+            const sortedForDisplay = sortForHistoryDisplay(labeledMatches);
+            lastAllSortedMatches = sortedForDisplay;
+            const displayMatches = sortedForDisplay.slice(0, HISTORY_DISPLAY_LIMIT);
+            renderQuoteHistoryPanel(displayMatches, sortedForDisplay.length - displayMatches.length);
+
+            const allMatchedLoads = labeledMatches.map(m => m.load);
+            const includesNearby = labeledMatches.some(m => m.label !== 'Exact match');
+            let priceHtml;
+            if (allMatchedLoads.length) {
+                const countLabel = allMatchedLoads.length > 1
+                    ? ` (${allMatchedLoads.length} loads${includesNearby ? ` within ${NEARBY_RADIUS_MILES}mi` : ''})`
+                    : (includesNearby ? ` (within ${NEARBY_RADIUS_MILES}mi)` : '');
+
+                // Loads archived before rate extraction existed (or
+                // where it missed) may have no cached carrierRate -
+                // excluded here rather than counted as a $0, which
+                // would wreck a lowest-we-paid floor.
+                const validRates = allMatchedLoads.map(load => load.carrierRate).filter(r => typeof r === 'number');
+                if (validRates.length) {
+                    const minRate = Math.min(...validRates);
+                    const maxRate = Math.max(...validRates);
+                    const carrierRateText = minRate === maxRate
+                        ? `$${minRate.toLocaleString()}`
+                        : `$${minRate.toLocaleString()} - $${maxRate.toLocaleString()}`;
+
+                    // Suggested Customer Price spans the same lowest-
+                    // to-highest spread as the carrier rate above it,
+                    // rather than a single average - the low end is
+                    // the 10% markup on the cheapest we've actually
+                    // paid, the high end is the 15% markup on the
+                    // most, so the whole range reflects the real
+                    // spread of what this lane has gone for.
+                    const low = computeCustomerPriceRange(minRate).low;
+                    const high = computeCustomerPriceRange(maxRate).high;
+
+                    priceHtml = `
+                        <div class="quote-result-row">
+                            <div class="quote-result-label">Historical Carrier Rate${countLabel}</div>
+                            <div class="quote-result-value">${carrierRateText}</div>
+                        </div>
+                        <div class="quote-result-row quote-result-highlight">
+                            <div class="quote-result-label">Suggested Customer Price</div>
+                            <div class="quote-result-value">$${low.toLocaleString()} - $${high.toLocaleString()}</div>
+                        </div>
+                    `;
+                } else {
+                    priceHtml = `
+                        <div class="quote-result-row">
+                            <div class="quote-result-label">Historical Carrier Rate${countLabel}</div>
+                            <div class="quote-result-value">—</div>
+                        </div>
+                        <p class="quote-no-history">No cached rate for ${allMatchedLoads.length > 1 ? 'these matches' : 'this match'} yet - set a $/mile rate below to work one out manually.</p>
+                    `;
+                }
+            } else {
+                priceHtml = `<p class="quote-no-history">No past loads found on or near this lane yet - archive a load on this route to get a price estimate, or set a $/mile rate below to work one out manually.</p>`;
+            }
+
+            if (searchingNearby) {
+                priceHtml += `<p class="quote-no-history">Searching nearby lanes for more matches…</p>`;
+            }
+
+            let perMileHtml = '';
+            if (currentQuoteMiles !== null) {
+                perMileHtml = `
+                    <div class="quote-permile-section">
+                        <div class="quote-section-label">Or Calculate Manually</div>
+                        <div class="form-group">
+                            <label for="quoteManualMode">Calculate</label>
+                            <select id="quoteManualMode" onchange="updateManualCalcMode()">
+                                <option value="perMile"${allMatchedLoads.length ? '' : ' selected'}>Try a $/mile carrier rate</option>
+                                <option value="carrierRate"${allMatchedLoads.length ? ' selected' : ''}>Try a Carrier Rate ($)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <input type="number" id="quoteManualInput" step="0.1" min="0" placeholder="e.g., 2.50" oninput="updateManualCalcEstimate()">
+                        </div>
+                        <div id="quoteManualResults"></div>
+                    </div>
+                `;
+            }
+
+            resultsEl.innerHTML = mileageHtml + priceHtml + perMileHtml;
+            resultsEl.classList.add('active');
+            updateManualCalcMode();
         }
 
         function parseIsoDateLocal(isoDate) {

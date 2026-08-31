@@ -5827,7 +5827,7 @@
                         <div class="quote-result-value" id="quoteManualCarrierResult">—</div>
                     </div>
                     <div class="quote-result-row quote-result-highlight">
-                        <div class="quote-result-label">Suggested Customer Price</div>
+                        <div class="quote-result-label">Suggested Quote</div>
                         <div class="quote-result-value" id="quoteManualPriceResult">—</div>
                     </div>
                 `;
@@ -6022,23 +6022,37 @@
                         ? `$${minRate.toLocaleString()}`
                         : `$${minRate.toLocaleString()} - $${maxRate.toLocaleString()}`;
 
-                    // Suggested Customer Price spans the same lowest-
-                    // to-highest spread as the carrier rate above it,
-                    // rather than a single average - the low end is
-                    // the 10% markup on the cheapest we've actually
-                    // paid, the high end is the 15% markup on the
-                    // most, so the whole range reflects the real
-                    // spread of what this lane has gone for.
+                    // What we actually paid per mile on those historical
+                    // loads - uses this lane's own mileage, so it's exact
+                    // for an "Exact match" and a close approximation for a
+                    // "~N mi away" nearby match (no per-load mileage is
+                    // stored to compute it more precisely than that).
+                    let perMileText = '';
+                    if (typeof currentQuoteMiles === 'number' && currentQuoteMiles > 0) {
+                        const minPerMile = minRate / currentQuoteMiles;
+                        const maxPerMile = maxRate / currentQuoteMiles;
+                        perMileText = minRate === maxRate
+                            ? ` ($${minPerMile.toFixed(2)}/mi)`
+                            : ` ($${minPerMile.toFixed(2)} - $${maxPerMile.toFixed(2)}/mi)`;
+                    }
+
+                    // Suggested Quote spans the same lowest-to-highest
+                    // spread as the carrier rate above it, rather than a
+                    // single average - the low end is the 10% markup on
+                    // the cheapest we've actually paid, the high end is
+                    // the 15% markup on the most, so the whole range
+                    // reflects the real spread of what this lane has
+                    // gone for.
                     const low = computeCustomerPriceRange(minRate).low;
                     const high = computeCustomerPriceRange(maxRate).high;
 
                     priceHtml = `
                         <div class="quote-result-row">
                             <div class="quote-result-label">Historical Carrier Rate${countLabel}</div>
-                            <div class="quote-result-value">${carrierRateText}</div>
+                            <div class="quote-result-value">${carrierRateText}${perMileText}</div>
                         </div>
                         <div class="quote-result-row quote-result-highlight">
-                            <div class="quote-result-label">Suggested Customer Price</div>
+                            <div class="quote-result-label">Suggested Quote</div>
                             <div class="quote-result-value">$${low.toLocaleString()} - $${high.toLocaleString()}</div>
                         </div>
                     `;

@@ -5645,6 +5645,20 @@
             return res.json();
         }
 
+        // A single transient failure (a dropped connection, a brief 5xx
+        // from the free geocoder) shouldn't take down the whole lookup -
+        // treats a failed attempt the same as an empty result so
+        // geocodeCity still moves on to try its broader fallback tiers,
+        // rather than throwing and surfacing as "Unavailable" for what
+        // was really just one bad request.
+        async function tryGeocodeTier(url) {
+            try {
+                return await fetchGeocodeCandidates(url);
+            } catch (err) {
+                return [];
+            }
+        }
+
         // Free, no-API-key geocoder - turns a city/state into coordinates
         // so a route can be looked up between them. Tries progressively
         // broader lookups if the previous one comes back empty, rather
@@ -5663,7 +5677,7 @@
             // of the same name (e.g. Crosby, TX near Houston vs. Crosby
             // County, TX out in the Panhandle, ~500 miles away), and the
             // county boundary sometimes outranks the actual town.
-            let data = await fetchGeocodeCandidates(
+            let data = await tryGeocodeTier(
                 `https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=us&q=${encodeURIComponent(cityState)}`
             );
 
@@ -5672,7 +5686,7 @@
             // countrycodes filter above would silently exclude a real
             // match like that, so retry without it before giving up.
             if (!data.length) {
-                data = await fetchGeocodeCandidates(
+                data = await tryGeocodeTier(
                     `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(cityState)}`
                 );
             }
@@ -5686,7 +5700,7 @@
                 if (parts.length > 1) {
                     const city = parts[0];
                     const state = parts[parts.length - 1];
-                    data = await fetchGeocodeCandidates(
+                    data = await tryGeocodeTier(
                         `https://nominatim.openstreetmap.org/search?format=json&limit=5&city=${encodeURIComponent(city)}&state=${encodeURIComponent(state)}&country=USA`
                     );
                 }

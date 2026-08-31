@@ -682,6 +682,22 @@
             font-size: 16px;
             font-weight: 700;
             color: #333;
+            text-align: right;
+        }
+
+        .quote-result-permile {
+            font-size: 13px;
+            font-weight: 600;
+            color: #666;
+            margin-top: 2px;
+        }
+
+        .quote-result-sublabel {
+            display: block;
+            font-size: 11px;
+            font-weight: 600;
+            color: #999;
+            margin-top: 2px;
         }
 
         .quote-result-row.quote-result-highlight {
@@ -6048,8 +6064,8 @@
 
                     priceHtml = `
                         <div class="quote-result-row">
-                            <div class="quote-result-label">Historical Carrier Rate${countLabel}</div>
-                            <div class="quote-result-value">${carrierRateText}${perMileText}</div>
+                            <div class="quote-result-label">Historical Carrier Rate${countLabel ? `<span class="quote-result-sublabel">${countLabel.trim()}</span>` : ''}</div>
+                            <div class="quote-result-value">${carrierRateText}${perMileText ? `<div class="quote-result-permile">${perMileText.trim()}</div>` : ''}</div>
                         </div>
                         <div class="quote-result-row quote-result-highlight">
                             <div class="quote-result-label">Suggested Quote</div>
@@ -6059,7 +6075,7 @@
                 } else {
                     priceHtml = `
                         <div class="quote-result-row">
-                            <div class="quote-result-label">Historical Carrier Rate${countLabel}</div>
+                            <div class="quote-result-label">Historical Carrier Rate${countLabel ? `<span class="quote-result-sublabel">${countLabel.trim()}</span>` : ''}</div>
                             <div class="quote-result-value">—</div>
                         </div>
                         <p class="quote-no-history">No cached rate for ${allMatchedLoads.length > 1 ? 'these matches' : 'this match'} yet - set a $/mile rate below to work one out manually.</p>

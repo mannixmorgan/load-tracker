@@ -3103,6 +3103,7 @@
                     archivedLoads = snapshot.docs.map((doc) => doc.data());
                     if (currentTab === 'archived') renderLoads();
                     refreshCitySuggestionSource();
+                    warmGeocodeCacheInBackground();
                 },
                 (err) => console.error('Archived loads listener error:', err)
             );
@@ -5522,6 +5523,41 @@
             geocodeCache[key] = coords;
             saveGeocodeCache();
             return coords;
+        }
+
+        // The nearby-lanes search on the Quote Calculator only waits on
+        // geocodeCity for cities it's never looked up before - once a city
+        // is cached, that lookup is instant. This quietly geocodes any
+        // archived-load cities that aren't cached yet, one at a time in the
+        // background (never blocking the UI), so by the time someone
+        // actually calculates a quote most or all of the relevant cities
+        // are already warm and the live wait almost never happens. Paced
+        // to one request per second to stay within the free geocoder's
+        // usage policy - a one-time cost after a big bulk import, paid in
+        // the background instead of during a Calculate click.
+        let geocodeWarmerRunning = false;
+        async function warmGeocodeCacheInBackground() {
+            if (geocodeWarmerRunning) return;
+            geocodeWarmerRunning = true;
+            try {
+                const uniqueCities = [...new Set(
+                    archivedLoads.flatMap(l => [l.pickupCity, l.deliveryCity]).filter(Boolean)
+                )];
+                const uncached = uniqueCities.filter(city => {
+                    const key = normalizeLocation(city);
+                    return key && !Object.prototype.hasOwnProperty.call(geocodeCache, key);
+                });
+                for (const city of uncached) {
+                    try {
+                        await geocodeCity(city);
+                    } catch (err) {
+                        // A future live search will just retry this city itself.
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 1100));
+                }
+            } finally {
+                geocodeWarmerRunning = false;
+            }
         }
 
         // Actual road-following distance via OSRM's free public routing

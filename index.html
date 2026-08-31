@@ -5610,6 +5610,34 @@
             geocodeCache = {};
         }
 
+        // Cities saved as "not found" (null) by an earlier, less capable
+        // version of geocodeCity (before the small-town fallback and
+        // transient-failure recovery existed) would otherwise stay stuck
+        // that way forever - purge any of those on load so they get a
+        // clean retry instead of permanently repeating a stale failure.
+        {
+            let hadStaleNull = false;
+            for (const k of Object.keys(geocodeCache)) {
+                if (geocodeCache[k] === null) {
+                    delete geocodeCache[k];
+                    hadStaleNull = true;
+                }
+            }
+            if (hadStaleNull) {
+                try {
+                    localStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(geocodeCache));
+                } catch (err) {
+                    // Private browsing / storage blocked - just skip persisting.
+                }
+            }
+        }
+
+        // A "not found" city is only ever remembered for the rest of the
+        // current page session (see geocodeCity) - never persisted, so a
+        // genuinely-nonexistent lookup always gets a clean retry on the
+        // next visit rather than sticking around indefinitely.
+        const geocodeSessionNotFound = new Set();
+
         function saveGeocodeCache() {
             try {
                 localStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(geocodeCache));
@@ -5668,8 +5696,21 @@
         async function geocodeCity(cityState) {
             const key = normalizeLocation(cityState);
             if (!key) return null;
-            if (Object.prototype.hasOwnProperty.call(geocodeCache, key)) {
+            // A cached "not found" (null) is only ever trusted for the rest
+            // of this page session (see below) - a persisted negative result
+            // is much less reliable than a positive one (it could reflect a
+            // transient failure, or a bug that's since been fixed) and
+            // shouldn't get to silently stick forever the way a real
+            // coordinate match does.
+            if (Object.prototype.hasOwnProperty.call(geocodeCache, key) && geocodeCache[key] !== null) {
                 return geocodeCache[key];
+            }
+            // Still worth remembering within this one page session, so a
+            // genuinely-nonexistent city doesn't get looked up over and
+            // over (e.g. across several nearby-search candidates) - just
+            // never written to the persisted cache above.
+            if (geocodeSessionNotFound.has(key)) {
+                return null;
             }
 
             // Ask for a handful of candidates instead of just the top-ranked
@@ -5711,8 +5752,12 @@
             // administrative boundary that happens to match the same name.
             const best = data.find(r => r.class === 'place') || data[0];
             const coords = best ? { lat: parseFloat(best.lat), lon: parseFloat(best.lon) } : null;
-            geocodeCache[key] = coords;
-            saveGeocodeCache();
+            if (coords) {
+                geocodeCache[key] = coords;
+                saveGeocodeCache();
+            } else {
+                geocodeSessionNotFound.add(key);
+            }
             return coords;
         }
 

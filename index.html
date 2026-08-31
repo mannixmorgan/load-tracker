@@ -2322,7 +2322,6 @@
 
         let db = null;
         let loadsUnsubscribe = null;
-        let archivedLoadsUnsubscribe = null;
         if (isFirebaseConfigured()) {
             firebase.initializeApp(firebaseConfig);
             db = firebase.firestore();
@@ -2353,7 +2352,15 @@
         ];
 
         let loads = [];
+        // Unlike loads (small, always live-synced), the archive is never
+        // fully fetched just because the app is open - it's only pulled in
+        // full the first time it's actually needed (opening the Archived
+        // tab, or bulk-import's duplicate check), so a normal reload or a
+        // Quote Calculator run doesn't pay for reading potentially
+        // thousands of records every single time. See ensureArchivedLoadsLoaded().
         let archivedLoads = [];
+        let archivedLoadsLoaded = false;
+        let archivedLoadsLoadingPromise = null;
         let editingLoadId = null;
         let editingArchivedLoadId = null;
         let issuingLoadId = null;
@@ -2373,7 +2380,12 @@
             document.querySelectorAll('.tab-btn').forEach((btn) => {
                 btn.classList.toggle('active', btn.dataset.tab === tab);
             });
-            if (tab === 'archived') archivedVisibleCount = ARCHIVED_PAGE_SIZE;
+            if (tab === 'archived') {
+                archivedVisibleCount = ARCHIVED_PAGE_SIZE;
+                ensureArchivedLoadsLoaded().then(() => {
+                    if (currentTab === 'archived') renderLoads();
+                });
+            }
             renderLoads();
         }
 
@@ -2852,8 +2864,19 @@
         // archived load saved before that split existed. Leaving whatever
         // isn't in the written object alone is exactly what's needed for
         // old and new records to coexist without a migration.
+        //
+        // pickupCityNormalized/deliveryCityNormalized are written on every
+        // save (single archive, bulk import, and editing an archived load
+        // all funnel through here) so the Quote Calculator can look a lane
+        // up with a targeted Firestore query instead of scanning the whole
+        // archive - see findMatchingArchivedLoads().
         function apiArchiveLoad(record) {
-            return db.collection('archivedLoads').doc(record.id).set(record, { merge: true });
+            const withNormalized = {
+                ...record,
+                pickupCityNormalized: normalizeLocation(record.pickupCity),
+                deliveryCityNormalized: normalizeLocation(record.deliveryCity)
+            };
+            return db.collection('archivedLoads').doc(record.id).set(withNormalized, { merge: true });
         }
 
         function apiDeleteArchivedLoad(id) {
@@ -2881,6 +2904,46 @@
         async function apiArchiveLoadWithPdf(record, pdfData) {
             await apiArchiveLoad(record);
             if (pdfData) await apiSaveArchivedLoadPdf(record.id, pdfData);
+        }
+
+        // One-time backfill: archived loads saved before
+        // pickupCityNormalized/deliveryCityNormalized existed don't have
+        // them yet, so the Quote Calculator's targeted query would miss
+        // them entirely. This reads the whole archive exactly once, ever
+        // (guarded by a flag doc so it never runs again once done,
+        // including on every other device/session after this), and
+        // batch-writes the missing fields onto whatever needs them.
+        async function migrateArchivedCityNormalizationOnce() {
+            try {
+                const flagRef = db.collection('meta').doc('archiveMigration');
+                const flagDoc = await flagRef.get();
+                if (flagDoc.exists && flagDoc.data().normalizedCitiesDone) return;
+
+                const snapshot = await db.collection('archivedLoads').get();
+                const BATCH_LIMIT = 400; // Firestore caps a batch at 500 writes
+                let batch = db.batch();
+                let opsInBatch = 0;
+                let touched = 0;
+                for (const doc of snapshot.docs) {
+                    const data = doc.data();
+                    if (typeof data.pickupCityNormalized === 'string' && typeof data.deliveryCityNormalized === 'string') continue;
+                    batch.set(doc.ref, {
+                        pickupCityNormalized: normalizeLocation(data.pickupCity),
+                        deliveryCityNormalized: normalizeLocation(data.deliveryCity)
+                    }, { merge: true });
+                    opsInBatch++;
+                    touched++;
+                    if (opsInBatch >= BATCH_LIMIT) {
+                        await batch.commit();
+                        batch = db.batch();
+                        opsInBatch = 0;
+                    }
+                }
+                if (opsInBatch > 0) await batch.commit();
+                await flagRef.set({ normalizedCitiesDone: true, migratedAt: new Date().toISOString(), recordsTouched: touched });
+            } catch (err) {
+                console.error('Archive city-normalization migration failed (will retry next login):', err);
+            }
         }
 
         // Common freight hubs, seeded so autocomplete is useful right away
@@ -3096,17 +3159,32 @@
             );
         }
 
-        function subscribeToArchivedLoads() {
-            if (archivedLoadsUnsubscribe) return;
-            archivedLoadsUnsubscribe = db.collection('archivedLoads').onSnapshot(
-                (snapshot) => {
-                    archivedLoads = snapshot.docs.map((doc) => doc.data());
-                    if (currentTab === 'archived') renderLoads();
+        // Fetches the full archive exactly once, the first time it's
+        // actually needed - opening the Archived tab, or opening Bulk
+        // Import (whose duplicate check needs to see the whole history).
+        // A load archived earlier this session before this ever ran is
+        // kept rather than dropped, in the unlikely case its write hadn't
+        // landed yet when this fetch went out.
+        async function ensureArchivedLoadsLoaded() {
+            if (archivedLoadsLoaded) return;
+            if (archivedLoadsLoadingPromise) return archivedLoadsLoadingPromise;
+            archivedLoadsLoadingPromise = (async () => {
+                try {
+                    const snapshot = await db.collection('archivedLoads').get();
+                    const fetched = snapshot.docs.map((doc) => doc.data());
+                    const fetchedIds = new Set(fetched.map(l => l.id));
+                    const onlyLocal = archivedLoads.filter(l => !fetchedIds.has(l.id));
+                    archivedLoads = [...onlyLocal, ...fetched];
+                    archivedLoadsLoaded = true;
                     refreshCitySuggestionSource();
                     warmGeocodeCacheInBackground();
-                },
-                (err) => console.error('Archived loads listener error:', err)
-            );
+                } catch (err) {
+                    console.error('Failed to load the archive:', err);
+                } finally {
+                    archivedLoadsLoadingPromise = null;
+                }
+            })();
+            return archivedLoadsLoadingPromise;
         }
 
         function enterApp(user) {
@@ -3121,7 +3199,7 @@
                 </div>
             `;
             subscribeToLoads();
-            subscribeToArchivedLoads();
+            migrateArchivedCityNormalizationOnce();
         }
 
         function showSignInScreen() {
@@ -3183,10 +3261,9 @@
                 loadsUnsubscribe();
                 loadsUnsubscribe = null;
             }
-            if (archivedLoadsUnsubscribe) {
-                archivedLoadsUnsubscribe();
-                archivedLoadsUnsubscribe = null;
-            }
+            archivedLoads = [];
+            archivedLoadsLoaded = false;
+            archivedLoadsLoadingPromise = null;
             firebase.auth().signOut();
             // onAuthStateChanged above handles showing the sign-in screen.
         }
@@ -4886,7 +4963,11 @@
             const sorted = [...matches].sort(compareRateConDesc);
 
             if (!sorted.length) {
-                container.innerHTML = searchQuery ? `
+                container.innerHTML = (!archivedLoadsLoaded && !searchQuery) ? `
+                    <div class="empty-state">
+                        <h2>Loading archive…</h2>
+                    </div>
+                ` : searchQuery ? `
                     <div class="empty-state">
                         <div class="empty-state-icon">🔍</div>
                         <h2>No matches</h2>
@@ -4953,12 +5034,20 @@
         let bulkImportRows = [];
         let bulkImportSeq = 0;
 
-        function openBulkImportModal() {
+        async function openBulkImportModal() {
             bulkImportRows = [];
             document.getElementById('bulkImportFileInput').value = '';
             document.getElementById('bulkImportStatus').textContent = '';
             renderBulkImportReview();
             document.getElementById('bulkImportModal').classList.add('active');
+            // The duplicate-RC# check below reads straight from the
+            // archivedLoads array - make sure it holds the full history
+            // (not just whatever's loaded so far) before anyone can review
+            // or confirm a row.
+            document.getElementById('bulkImportStatus').textContent = 'Checking existing archive for duplicates…';
+            await ensureArchivedLoadsLoaded();
+            document.getElementById('bulkImportStatus').textContent = '';
+            renderBulkImportReview();
         }
 
         function closeBulkImportModal() {
@@ -5436,12 +5525,27 @@
                 .trim();
         }
 
-        function findMatchingArchivedLoads(pickup, delivery) {
+        // Exact-match cap for a Calculate run - the scan stops once it's
+        // found this many, both to keep the read cost of a targeted
+        // Firestore query tiny regardless of archive size, and because a
+        // 6th+ exact match wouldn't move the price estimate meaningfully.
+        const EXACT_MATCH_LIMIT = 5;
+
+        // A direct, targeted Firestore query (not a scan of the whole
+        // archive) - pickupCityNormalized/deliveryCityNormalized are
+        // written on every archive save specifically so this can look a
+        // lane up without reading anything but the matches themselves,
+        // however large the archive gets.
+        async function findMatchingArchivedLoads(pickup, delivery) {
             const p = normalizeLocation(pickup);
             const d = normalizeLocation(delivery);
-            return archivedLoads.filter(load =>
-                normalizeLocation(load.pickupCity) === p && normalizeLocation(load.deliveryCity) === d
-            );
+            if (!p || !d) return [];
+            const snapshot = await db.collection('archivedLoads')
+                .where('pickupCityNormalized', '==', p)
+                .where('deliveryCityNormalized', '==', d)
+                .limit(EXACT_MATCH_LIMIT)
+                .get();
+            return snapshot.docs.map(doc => doc.data());
         }
 
         function roundToNearest50(value) {
@@ -5612,50 +5716,52 @@
         // Loads on a similar-but-not-identical lane - regional loads that
         // never matched on exact city text still count as a fair comp for
         // pricing, e.g. a Midland-Tyler quote should also pull up an
-        // Odessa-Lindale load. Geocoded one at a time (rather than all at
-        // once) to stay polite to the free geocoding service, which is
-        // fine once a lane's cities are cached from a past search but can
-        // take real time the first time a lane with a lot of archived
-        // history (bulk-imported, say) gets checked - so only the most
-        // recent NEARBY_CANDIDATE_LIMIT candidates are even considered,
-        // capping the worst case regardless of how large the archive gets.
+        // Odessa-Lindale load. There's no way to ask Firestore for "within
+        // 50mi" directly (that needs geocoded distance, not a field
+        // filter), so this pulls a bounded, cheap candidate batch - just
+        // the most recent NEARBY_CANDIDATE_LIMIT archived loads, a single
+        // query regardless of how large the archive gets - and checks them
+        // one at a time, stopping as soon as NEARBY_MATCH_LIMIT qualifying
+        // matches are found so a lane that matches early doesn't pay to
+        // geocode the rest of the batch.
         const NEARBY_RADIUS_MILES = 50;
         const NEARBY_CANDIDATE_LIMIT = 30;
+        const NEARBY_MATCH_LIMIT = 5;
 
         async function findNearbyArchivedLoads(pickupCoords, deliveryCoords, excludeIds) {
-            const candidates = archivedLoads
-                .filter(l => !excludeIds.includes(l.id))
-                .sort((a, b) => (b.archivedAt || '').localeCompare(a.archivedAt || ''))
-                .slice(0, NEARBY_CANDIDATE_LIMIT);
-
-            // Geocode each distinct city only once no matter how many of
-            // these candidates share it, rather than re-awaiting the same
-            // city repeatedly - a dispatcher's history is full of repeat
-            // lanes. geocodeCity's own cache means a city already looked
-            // up on a past search resolves instantly either way.
-            const uniqueCities = [...new Set(
-                candidates.flatMap(l => [l.pickupCity, l.deliveryCity]).filter(Boolean)
-            )];
-            const cityCoords = new Map();
-            for (const city of uniqueCities) {
-                try {
-                    cityCoords.set(city, await geocodeCity(city));
-                } catch (err) {
-                    cityCoords.set(city, null);
-                }
-            }
+            const snapshot = await db.collection('archivedLoads')
+                .orderBy('archivedAt', 'desc')
+                .limit(NEARBY_CANDIDATE_LIMIT)
+                .get();
+            const candidates = snapshot.docs
+                .map(doc => doc.data())
+                .filter(l => !excludeIds.includes(l.id));
 
             const results = [];
             for (const load of candidates) {
-                const loadPickupCoords = cityCoords.get(load.pickupCity);
-                const loadDeliveryCoords = cityCoords.get(load.deliveryCity);
-                if (!loadPickupCoords || !loadDeliveryCoords) continue;
+                if (results.length >= NEARBY_MATCH_LIMIT) break;
 
-                const pickupDist = haversineMiles(pickupCoords, loadPickupCoords);
-                const deliveryDist = haversineMiles(deliveryCoords, loadDeliveryCoords);
-                if (pickupDist <= NEARBY_RADIUS_MILES && deliveryDist <= NEARBY_RADIUS_MILES) {
-                    results.push({ load, distance: Math.max(pickupDist, deliveryDist) });
+                let loadPickupCoords;
+                try {
+                    loadPickupCoords = await geocodeCity(load.pickupCity);
+                } catch (err) {
+                    continue;
                 }
+                if (!loadPickupCoords) continue;
+                const pickupDist = haversineMiles(pickupCoords, loadPickupCoords);
+                if (pickupDist > NEARBY_RADIUS_MILES) continue;
+
+                let loadDeliveryCoords;
+                try {
+                    loadDeliveryCoords = await geocodeCity(load.deliveryCity);
+                } catch (err) {
+                    continue;
+                }
+                if (!loadDeliveryCoords) continue;
+                const deliveryDist = haversineMiles(deliveryCoords, loadDeliveryCoords);
+                if (deliveryDist > NEARBY_RADIUS_MILES) continue;
+
+                results.push({ load, distance: Math.max(pickupDist, deliveryDist) });
             }
             return results;
         }
@@ -5759,7 +5865,7 @@
             currentQuoteMiles = null;
 
             try {
-                const exactMatches = [...findMatchingArchivedLoads(pickup, delivery)]
+                const exactMatches = (await findMatchingArchivedLoads(pickup, delivery))
                     .sort((a, b) => (b.archivedAt || '').localeCompare(a.archivedAt || ''));
                 const labeledMatches = exactMatches.map(load => ({ load, label: 'Exact match' }));
 
@@ -5810,7 +5916,7 @@
                 // calls behind them are the 2 geocodes and 1 route lookup
                 // above, so the button never sits on a big archive's worth
                 // of nearby-lane geocoding.
-                const searchingNearby = !!(from && to && exactMatches.length < HISTORY_DISPLAY_LIMIT);
+                const searchingNearby = !!(from && to && exactMatches.length < EXACT_MATCH_LIMIT);
                 renderQuoteResults(requestId, mileageHtml, labeledMatches, searchingNearby);
 
                 // Regional loads that never matched on exact city text

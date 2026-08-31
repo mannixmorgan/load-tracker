@@ -5498,6 +5498,27 @@
             }
         }
 
+        // Nominatim's usage policy asks for no parallel requests - but a
+        // live Calculate click (which geocodes pickup+delivery together)
+        // and the background cache warmer both call geocodeCity, and
+        // without this, their fetches could land at the same instant and
+        // get rejected as overlapping requests (surfacing as an
+        // intermittent "Unavailable" mileage/city result). Chaining every
+        // uncached lookup through one shared queue, with a small gap
+        // between requests, guarantees only one is ever in flight no
+        // matter which part of the app triggered it.
+        let geocodeFetchQueue = Promise.resolve();
+        const GEOCODE_MIN_GAP_MS = 250;
+        function queueGeocodeFetch(url) {
+            const request = geocodeFetchQueue.then(async () => {
+                const res = await fetch(url);
+                await new Promise(resolve => setTimeout(resolve, GEOCODE_MIN_GAP_MS));
+                return res;
+            });
+            geocodeFetchQueue = request.catch(() => {});
+            return request;
+        }
+
         // Free, no-API-key geocoder - turns a city/state into coordinates
         // so a route can be looked up between them.
         async function geocodeCity(cityState) {
@@ -5512,7 +5533,7 @@
             // County, TX out in the Panhandle, ~500 miles away), and the
             // county boundary sometimes outranks the actual town.
             const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=us&q=${encodeURIComponent(cityState)}`;
-            const res = await fetch(url);
+            const res = await queueGeocodeFetch(url);
             if (!res.ok) throw new Error('Geocoding request failed');
             const data = await res.json();
             // Prefer an actual populated place (city/town/village/etc, all

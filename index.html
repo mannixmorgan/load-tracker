@@ -1398,7 +1398,7 @@
             box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
             border-left: 3px solid #999;
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr 90px 36px 36px;
+            grid-template-columns: 100px 1fr 1fr 1fr 90px 36px 36px;
             align-items: center;
             gap: 18px;
             padding: 10px 14px;
@@ -5016,6 +5016,10 @@
 
             const cardsHtml = visible.map(load => `
                 <div class="archived-card">
+                    <div class="archived-field">
+                        <div class="load-field-label">RC#</div>
+                        <div class="load-field-value">${escapeHtml(load.rateConNumber || '—')}</div>
+                    </div>
                     <div class="archived-field">
                         <div class="load-field-label">Carrier</div>
                         <div class="load-field-value">${escapeHtml(load.carrierName || '—')}</div>

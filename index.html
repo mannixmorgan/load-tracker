@@ -547,7 +547,6 @@
         input[type="email"],
         input[type="tel"],
         input[type="date"],
-        input[type="time"],
         input[type="number"],
         input[type="file"],
         textarea {
@@ -564,7 +563,6 @@
         input[type="email"]:focus,
         input[type="tel"]:focus,
         input[type="date"]:focus,
-        input[type="time"]:focus,
         input[type="number"]:focus,
         textarea:focus {
             outline: none;
@@ -1952,7 +1950,7 @@
 
                     <div class="form-group">
                         <label for="pdfPickupTime">Pickup Time (Optional)</label>
-                        <input type="time" id="pdfPickupTime">
+                        <input type="text" inputmode="numeric" placeholder="e.g. 2:30pm or 1430" id="pdfPickupTime" onblur="normalizeTimeInput(this)">
                     </div>
 
                     <div class="form-group">
@@ -1967,7 +1965,7 @@
 
                     <div class="form-group">
                         <label for="pdfDeliveryTime">Delivery Time (Optional)</label>
-                        <input type="time" id="pdfDeliveryTime">
+                        <input type="text" inputmode="numeric" placeholder="e.g. 2:30pm or 1430" id="pdfDeliveryTime" onblur="normalizeTimeInput(this)">
                     </div>
 
                     <div class="form-group">
@@ -2231,7 +2229,7 @@
 
                 <div class="form-group">
                     <label for="editPickupTime">Pickup Time (Optional)</label>
-                    <input type="time" id="editPickupTime" onfocus="defaultTimeToNoon(event)">
+                    <input type="text" inputmode="numeric" placeholder="e.g. 2:30pm or 1430" id="editPickupTime" onblur="normalizeTimeInput(this)">
                 </div>
 
                 <div class="form-group">
@@ -2246,7 +2244,7 @@
 
                 <div class="form-group">
                     <label for="editDeliveryTime">Delivery Time (Optional)</label>
-                    <input type="time" id="editDeliveryTime" onfocus="defaultTimeToNoon(event)">
+                    <input type="text" inputmode="numeric" placeholder="e.g. 2:30pm or 1430" id="editDeliveryTime" onblur="normalizeTimeInput(this)">
                 </div>
 
                 <div class="form-group">
@@ -3325,13 +3323,67 @@
             }
         });
 
-        // Native time inputs start empty and, when you click into them and
-        // use the up/down arrows, Chrome scrolls from the CURRENT time of
-        // day rather than a sane default. Pre-filling noon on focus (only
-        // when there's no value yet) gives a fixed, predictable starting
-        // point to adjust from instead.
-        function defaultTimeToNoon(e) {
-            if (!e.target.value) e.target.value = '12:00';
+        // Pickup/delivery time is a plain text field (not a native <input
+        // type="time">) specifically so it can be typed on the keyboard
+        // straight through, rather than requiring a click into a picker
+        // widget first. Accepts whatever a dispatcher would naturally type
+        // - "2:30pm", "230pm", "0800", "8am", "14:30" - and normalizes it
+        // to a 24-hour "HH:MM" string, the same format already used
+        // everywhere else (formatTime, sorting, PDF extraction).
+        function parseTimeInput(text) {
+            const raw = (text || '').trim().toLowerCase().replace(/\s+/g, '');
+            if (!raw) return null;
+
+            let hour, minute, meridiem = null;
+            let m = raw.match(/^(\d{1,2}):(\d{2})(am|pm|a|p)?$/);
+            if (m) {
+                hour = parseInt(m[1], 10);
+                minute = parseInt(m[2], 10);
+                meridiem = m[3] ? m[3][0] : null;
+            } else if ((m = raw.match(/^(\d{3,4})(am|pm|a|p)?$/))) {
+                // Military-style shorthand with no colon - "0800", "230pm".
+                minute = parseInt(m[1].slice(-2), 10);
+                hour = parseInt(m[1].slice(0, -2), 10);
+                meridiem = m[2] ? m[2][0] : null;
+            } else if ((m = raw.match(/^(\d{1,2})(am|pm|a|p)?$/))) {
+                hour = parseInt(m[1], 10);
+                minute = 0;
+                meridiem = m[2] ? m[2][0] : null;
+            } else {
+                return null;
+            }
+
+            if (minute > 59) return null;
+            if (meridiem) {
+                if (hour < 1 || hour > 12) return null;
+                if (meridiem === 'p' && hour !== 12) hour += 12;
+                if (meridiem === 'a' && hour === 12) hour = 0;
+            }
+            if (hour > 23) return null;
+
+            return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+        }
+
+        // Cleans up whatever was typed into a time field the moment focus
+        // leaves it - a valid time gets normalized to "HH:MM" so it looks
+        // consistent and matches what's actually stored; anything that
+        // can't be parsed is left exactly as typed rather than silently
+        // erased, so the dispatcher can see and fix their own typo.
+        function normalizeTimeInput(el) {
+            if (!el.value.trim()) return;
+            const parsed = parseTimeInput(el.value);
+            if (parsed) el.value = parsed;
+        }
+
+        // Reads a time field's value normalized to "HH:MM" for saving -
+        // normalizeTimeInput already does this on blur, but Enter can
+        // submit a form before blur fires, so this is a safety net rather
+        // than the only place normalization happens. Falls back to
+        // whatever was actually typed if it can't be parsed, rather than
+        // silently storing an empty time.
+        function getNormalizedTimeValue(id) {
+            const raw = document.getElementById(id).value;
+            return parseTimeInput(raw) || raw;
         }
 
         // Enter should submit the Edit Load form from any field - including
@@ -4164,10 +4216,10 @@
                 rateConNumber: rateConNumber,
                 pickupCity: document.getElementById('pdfPickupCity').value.trim(),
                 pickupDate: document.getElementById('pdfPickupDate').value,
-                pickupTime: document.getElementById('pdfPickupTime').value,
+                pickupTime: getNormalizedTimeValue('pdfPickupTime'),
                 deliveryCity: document.getElementById('pdfDeliveryCity').value.trim(),
                 deliveryDate: document.getElementById('pdfDeliveryDate').value,
-                deliveryTime: document.getElementById('pdfDeliveryTime').value,
+                deliveryTime: getNormalizedTimeValue('pdfDeliveryTime'),
                 loadNotes: document.getElementById('pdfLoadNotes').value.trim(),
                 pdfName: pendingPdfAttachment ? pendingPdfAttachment.name : '',
                 pdfData: pendingPdfAttachment ? pendingPdfAttachment.data : '',
@@ -4274,10 +4326,10 @@
             load.rateConNumber = document.getElementById('editRateConNumber').value.trim();
             load.pickupCity = document.getElementById('editPickupCity').value.trim();
             load.pickupDate = document.getElementById('editPickupDate').value;
-            load.pickupTime = document.getElementById('editPickupTime').value;
+            load.pickupTime = getNormalizedTimeValue('editPickupTime');
             load.deliveryCity = document.getElementById('editDeliveryCity').value.trim();
             load.deliveryDate = document.getElementById('editDeliveryDate').value;
-            load.deliveryTime = document.getElementById('editDeliveryTime').value;
+            load.deliveryTime = getNormalizedTimeValue('editDeliveryTime');
             load.loadNotes = document.getElementById('editLoadNotes').value.trim();
             load.updatedAt = new Date().toISOString();
             renderLoads();

@@ -983,50 +983,6 @@
             font-weight: 600;
         }
 
-        .sort-control {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .sort-control label {
-            margin: 0;
-            color: rgba(255, 255, 255, 0.75);
-            font-size: 12px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .sort-control select {
-            background: rgba(255, 255, 255, 0.15);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            padding: 10px 14px;
-            font-size: 13px;
-            font-weight: 700;
-            font-family: inherit;
-            cursor: pointer;
-        }
-
-        .sort-control select:hover {
-            background: rgba(255, 255, 255, 0.25);
-        }
-
-        .sort-control select:focus {
-            outline: none;
-            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.25);
-        }
-
-        /* Dropdown options render on the OS layer, so they need dark text
-           on white - the white-on-transparent styling above only applies
-           to the closed control itself. */
-        .sort-control select option {
-            background: white;
-            color: #1a3a52;
-        }
-
         .loads-container {
             display: flex;
             flex-direction: column;
@@ -1919,14 +1875,7 @@
                         <option value="30" selected>Medium</option>
                         <option value="60">Fast</option>
                     </select>
-                    <div class="sort-control">
-                        <label for="sortSelect">Sort by</label>
-                        <select id="sortSelect" onchange="changeSort(this.value)">
-                            <option value="rateCon">Rate Con # (newest first)</option>
-                            <option value="pickupDate">Pickup date (soonest first)</option>
-                            <option value="deliveryDate">Delivery date (soonest first)</option>
-                        </select>
-                    </div>
+                    <button class="tab-btn" onclick="resetToRateConOrder()" title="Clear any manual drag order and go back to Rate Con # order">↺ Reset Order (RC#)</button>
                 </div>
             </div>
 
@@ -2383,13 +2332,6 @@
         let notesLoadId = null;
         let expandedLoadId = null;
         let currentTab = 'active';
-        let currentSort = 'rateCon';
-        // Dragging a card (via the grab handle next to the ⋮ menu) is
-        // always available, regardless of which sort is picked below - it
-        // switches the board to a manually-set order on the spot. Picking
-        // a sort from the dropdown again cancels the override and goes
-        // back to that automatic ordering.
-        let manualOrderActive = false;
 
         function switchTab(tab) {
             currentTab = tab;
@@ -2402,12 +2344,6 @@
                     if (currentTab === 'archived') renderLoads();
                 });
             }
-            renderLoads();
-        }
-
-        function changeSort(sort) {
-            currentSort = sort;
-            manualOrderActive = false;
             renderLoads();
         }
 
@@ -2614,25 +2550,12 @@
             return rawB.localeCompare(rawA, undefined, { numeric: true });
         }
 
-        // Dates are stored as YYYY-MM-DD, so a plain string compare is
-        // already chronological. Loads with no date sort to the bottom
-        // rather than the top, so a blank date never buries active work.
-        function compareByDateAsc(field) {
-            return function (a, b) {
-                const valA = a[field] || '';
-                const valB = b[field] || '';
-                if (!valA && !valB) return compareRateConDesc(a, b);
-                if (!valA) return 1;
-                if (!valB) return -1;
-                if (valA !== valB) return valA < valB ? -1 : 1;
-                return compareRateConDesc(a, b);
-            };
-        }
-
         // Manual order is a plain number saved per load (see the drag-to-
-        // reorder handlers below). A load that's never been dragged has no
-        // manualOrder yet, so it falls back to the rate-con ordering rather
-        // than floating to the top or bottom arbitrarily.
+        // reorder handlers below), persisted to Firestore so a dragged
+        // order survives a page refresh. A load that's never been dragged
+        // (or was reset - see resetToRateConOrder) has no manualOrder, so
+        // it falls back to the rate-con ordering rather than floating to
+        // the top or bottom arbitrarily.
         function compareManualOrder(a, b) {
             const hasA = typeof a.manualOrder === 'number';
             const hasB = typeof b.manualOrder === 'number';
@@ -2643,17 +2566,7 @@
         }
 
         function sortLoads(list) {
-            const sorted = [...list];
-            if (manualOrderActive) {
-                sorted.sort(compareManualOrder);
-            } else if (currentSort === 'pickupDate') {
-                sorted.sort(compareByDateAsc('pickupDate'));
-            } else if (currentSort === 'deliveryDate') {
-                sorted.sort(compareByDateAsc('deliveryDate'));
-            } else {
-                sorted.sort(compareRateConDesc);
-            }
-            return sorted;
+            return [...list].sort(compareManualOrder);
         }
 
         // Which loads belong in the current view - shared between renderLoads
@@ -2671,9 +2584,9 @@
 
         // ── Drag to reorder ────────────────────────────────────────────
         // The grab handle next to the ⋮ menu is always there - grabbing it
-        // and dropping a card switches the board to a manually-set order
-        // on the spot (see manualOrderActive), overriding whatever sort was
-        // picked until a sort is chosen again.
+        // and dropping a card sets that load's manualOrder on the spot,
+        // persisted to Firestore, so it stays put across a refresh until
+        // "Reset Order (RC#)" is used (see resetToRateConOrder).
         //
         // Built on Pointer Events (not native HTML5 drag-and-drop) so the
         // card actually follows the mouse/finger in real time - native
@@ -2837,11 +2750,9 @@
             // future drop between two existing positions without a full
             // renumber every time (not needed yet, but costs nothing now).
             const previousOrders = new Map(visible.map(l => [l.id, l.manualOrder]));
-            const wasManualOrderActive = manualOrderActive;
             visible.forEach((load, index) => {
                 load.manualOrder = index * 10;
             });
-            manualOrderActive = true;
 
             renderLoads();
 
@@ -2851,9 +2762,32 @@
             } catch (err) {
                 console.error('Failed to save the new order:', err);
                 changed.forEach(l => { l.manualOrder = previousOrders.get(l.id); });
-                manualOrderActive = wasManualOrderActive;
                 renderLoads();
                 alert('Could not save the new order - check your connection and try again.');
+            }
+        }
+
+        // "Reset Order (RC#)" - clears manualOrder for whatever's currently
+        // visible (same view the drag handlers use), so sortLoads' fallback
+        // to compareRateConDesc takes back over for those loads.
+        async function resetToRateConOrder() {
+            const searchEl = document.getElementById('searchInput');
+            const searchQuery = searchEl ? searchEl.value.trim().toLowerCase() : '';
+            const visible = loads.filter(getCurrentViewFilter(searchQuery));
+            const toReset = visible.filter(l => typeof l.manualOrder === 'number');
+            if (!toReset.length) return;
+
+            const previousOrders = new Map(toReset.map(l => [l.id, l.manualOrder]));
+            toReset.forEach(l => { l.manualOrder = null; });
+            renderLoads();
+
+            try {
+                await Promise.all(toReset.map(l => apiUpdateLoad({ id: l.id, manualOrder: null })));
+            } catch (err) {
+                console.error('Failed to reset the order:', err);
+                toReset.forEach(l => { l.manualOrder = previousOrders.get(l.id); });
+                renderLoads();
+                alert('Could not reset the order - check your connection and try again.');
             }
         }
 
